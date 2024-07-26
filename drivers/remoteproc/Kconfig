@@ -378,4 +378,5 @@ config ZYNQMP_R5_REMOTEPROC
 
 endif # REMOTEPROC
 
+source "drivers/remoteproc/snps_accel/Kconfig"
 endmenu
