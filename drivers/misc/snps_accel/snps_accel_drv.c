@@ -562,7 +562,7 @@ static int __init snps_accel_init(void)
 	int ret;
 	dev_t dev;
 
-	snps_accel_class = class_create(THIS_MODULE, "snps-accel");
+	snps_accel_class = class_create("snps-accel");
 	if (IS_ERR(snps_accel_class)) {
 		ret = PTR_ERR(snps_accel_class);
 		goto err_class;
