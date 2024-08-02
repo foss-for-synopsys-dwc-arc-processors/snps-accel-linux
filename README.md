@@ -1,19 +1,20 @@
 # Synopsys NPX/VPX Linux kernel drivers
 
-Welcome to the repository with the NPX/VPX linux kernel drivers.
-This repository contains Linux kernel source tree with the integrated NPX/VPX drivers.
+## Welcome to the NPX/VPX Linux Kernel Drivers Repository
 
-Please visit [wiki page for NPX/VPX drivers](https://github.com/foss-for-synopsys-dwc-arc-processors/snps-accel-linux/wiki/Synopsys-NPX-VPX-Linux-Kernel-Drivers-Porting-Guide#files-hierarchy) 
-to get files hierarchy and other useful information.
+This repository contains the Linux kernel source tree with integrated NPX/VPX drivers.
 
-The repository has two stable branches:
+For the file hierarchy and other useful information, please visit the [NPX/VPX drivers wiki page](https://github.com/foss-for-synopsys-dwc-arc-processors/snps-accel-linux/wiki/Synopsys-NPX-VPX-Linux-Kernel-Drivers-Porting-Guide#files-hierarchy).
 
-* **snps_accel-v5.15** - the Linux 5.15 kernel source tree with the drivers
-* **snps_accel-v6.6** - the Linux 6.6 kernel source tree with the drivers
+### Branches
 
-The default branch contains only this README.
-Please select the required branch manually to access the certain kernel source tree with the
-NPX/VPX drivers:
+- **Main Development Branch:** `snps_accel-v5.15`  
+  This branch includes the Linux 5.15 kernel source tree with NPX/VPX drivers. All pull requests should be submitted to this branch first.
+
+- **Additional Branch:** `snps_accel-v6.6`  
+  This branch contains the Linux 6.6 kernel source tree with NPX/VPX drivers. It is periodically updated with commits from the main `snps_accel-v5.15` branch.
+
+The default branch contains only this README file. Please select the required branch manually to access the specific kernel source tree with the NPX/VPX drivers.
 ```
 git switch snps_accel-v5.15
 ```
