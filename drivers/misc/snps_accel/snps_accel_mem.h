@@ -29,6 +29,7 @@ struct snps_accel_mem_buffer {
 	struct list_head ctx_link;
 	struct device *dev;
 	struct dma_buf *dmabuf;
+	enum dma_data_direction dma_dir;
 	int fd;
 	dma_addr_t da;
 	void *va;

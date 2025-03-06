@@ -11,7 +11,8 @@
 #include "snps_accel_drv.h"
 
 static struct snps_accel_mem_buffer *
-snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size)
+snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size, 
+		      enum dma_data_direction dma_dir)
 {
 	struct page *page;
 	struct snps_accel_mem_buffer *mbuf = NULL;
@@ -23,7 +24,7 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size)
 
 	/* Allocate buffer in direct memory */
 	page = dma_alloc_pages(mem->dev, PAGE_ALIGN(size), &mbuf->da,
-			       DMA_BIDIRECTIONAL, GFP_KERNEL | __GFP_NOWARN);
+			       dma_dir, GFP_KERNEL | __GFP_NOWARN);
 	if (!page) {
 		dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
 		return NULL;
@@ -33,6 +34,7 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size)
 	mbuf->va = page_address(page);
 	mbuf->pa =  page_to_pfn(page) << PAGE_SHIFT;
 	mbuf->size = PAGE_ALIGN(size);
+	mbuf->dma_dir = dma_dir;
 
 	mutex_init(&mbuf->lock);
 	INIT_LIST_HEAD(&mbuf->attachments);
@@ -46,7 +48,9 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size)
 }
 
 static void
-snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem, struct snps_accel_mem_buffer *mbuf)
+snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem, 
+		     struct snps_accel_mem_buffer *mbuf,
+		     enum dma_data_direction dma_dir)
 {
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
 
@@ -56,7 +60,7 @@ snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem, struct snps_accel_mem_buffe
 
 	dma_free_pages(mbuf->dev, mbuf->size,
 		       virt_to_page(mbuf->va),
-		       mbuf->da, DMA_BIDIRECTIONAL);
+		       mbuf->da, dma_dir);
 
 	kfree(mbuf);
 	snps_accel_file_priv_put(fpriv);
@@ -93,12 +97,48 @@ static bool snps_accel_dmabuf_is_contig(struct sg_table *sgt)
 	return 1;
 }
 
+static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
+					   struct device *dev,
+					   struct snps_accel_mem_buffer *mbuf,
+					   enum dma_data_direction dma_dir)
+{
+	struct dma_buf_attachment *dba;
+	struct sg_table *sgt;
+
+	dba = dma_buf_attach(dmabuf, dev);
+	if (IS_ERR(dba)) 
+		return PTR_ERR(dba);
+
+	sgt = dma_buf_map_attachment(dba, dma_dir);
+	if (IS_ERR(sgt)) {
+		dma_buf_detach(dmabuf, dba);
+		return PTR_ERR(sgt);
+	}
+
+	mbuf->da = sg_dma_address(sgt->sgl);
+	mbuf->dmasgt = sgt;
+	mbuf->import_attach = dba;
+
+	return 0;
+}
+
+static void 
+snps_accel_dmabuf_detach_device(struct snps_accel_mem_buffer *mbuf)
+{
+	if (mbuf->dmasgt)
+		dma_buf_unmap_attachment(mbuf->import_attach, mbuf->dmasgt,
+					 mbuf->dma_dir);
+	dma_buf_detach(mbuf->dmabuf, mbuf->import_attach);
+	dma_buf_put(mbuf->import_attach->dmabuf);
+}
+
 static void snps_accel_dmabuf_op_release(struct dma_buf *dmabuf)
 {
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
 	struct snps_accel_mem_ctx *mem = mbuf->ctx;
 
-	snps_accel_mbuf_free(mem, mbuf);
+	snps_accel_dmabuf_detach_device(mbuf);
+	snps_accel_mbuf_free(mem, mbuf, mbuf->dma_dir);
 }
 
 static int
@@ -248,16 +288,6 @@ void snps_accel_app_mem_init(struct device *dev, struct snps_accel_mem_ctx *mem)
 	INIT_LIST_HEAD(&mem->mlist);
 }
 
-static void
-snsp_accel_dmabuf_detach_import(struct snps_accel_mem_buffer *mbuf)
-{
-	if (mbuf->dmasgt)
-		dma_buf_unmap_attachment(mbuf->import_attach, mbuf->dmasgt,
-					 DMA_BIDIRECTIONAL);
-	dma_buf_detach(mbuf->dmabuf, mbuf->import_attach);
-	dma_buf_put(mbuf->import_attach->dmabuf);
-}
-
 void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem)
 {
 	struct snps_accel_mem_buffer *mbuf, *nmb;
@@ -265,8 +295,8 @@ void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem)
 
 	mutex_lock(&mem->list_lock);
 	list_for_each_entry_safe(mbuf, nmb, &mem->mlist, ctx_link) {
-		if (mbuf->import_attach) {
-			snsp_accel_dmabuf_detach_import(mbuf);
+		if (mbuf->ctx == NULL && mbuf->import_attach) {
+			snps_accel_dmabuf_detach_device(mbuf);
 			list_del(&mbuf->ctx_link);
 			kfree(mbuf);
 			snps_accel_file_priv_put(fpriv);
@@ -275,14 +305,27 @@ void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem)
 	mutex_unlock(&mem->list_lock);
 }
 
+static inline enum dma_data_direction snps_accel_app_dma_direction(u32 dflags)
+{
+	unsigned ret = DMA_BIDIRECTIONAL;
+
+	if (dflags == SNPS_ACCEL_IO_R)
+		ret = DMA_FROM_DEVICE;
+	if (dflags == SNPS_ACCEL_IO_W)
+		ret = DMA_TO_DEVICE;
+
+	return ret;
+}
+
 struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem_ctx *mem,
 							   u64 size, u32 dflags)
 {
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct snps_accel_mem_buffer *mbuf = NULL;
 	int fd;
+	enum dma_data_direction dma_dir = snps_accel_app_dma_direction(dflags);
 
-	mbuf = snps_accel_mbuf_alloc(mem, size);
+	mbuf = snps_accel_mbuf_alloc(mem, size, dma_dir);
 	if (mbuf == NULL)
 		return NULL;
 
@@ -292,7 +335,8 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 	exp_info.priv = mbuf;
 	mbuf->dmabuf = dma_buf_export(&exp_info);
 	if (IS_ERR(mbuf->dmabuf)) {
-		snps_accel_mbuf_free(mem, mbuf);
+		dev_dbg(mem->dev, "Failed to create dmabuf\n");
+		snps_accel_mbuf_free(mem, mbuf, dma_dir);
 		return NULL;
 	}
 
@@ -302,6 +346,13 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 		return NULL;
 	}
 	mbuf->fd = fd;
+
+	if (snps_accel_dmabuf_attach_device(mbuf->dmabuf, mbuf->dev,
+					    mbuf, mbuf->dma_dir) != 0) {
+		dev_err(mem->dev, "Failed to attach dmabuf to device\n");
+		dma_buf_put(mbuf->dmabuf);
+		return NULL;
+	}
 
 	return mbuf;
 }
@@ -332,8 +383,6 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 {
 	struct dma_buf *dmabuf;
 	struct snps_accel_mem_buffer *mbuf;
-	struct dma_buf_attachment *dba;
-	struct sg_table *sgt;
 	int ret;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
 
@@ -350,34 +399,24 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 		goto err_alloc;
 	}
 
-	mbuf->dev = mem->dev;
-	mbuf->fd = fd;
-
-	dba = dma_buf_attach(dmabuf, mbuf->dev);
-	if (IS_ERR(dba)) {
-		dev_err(mem->dev, "Failed to attach dmabuf\n");
-		ret = PTR_ERR(dba);
+	mbuf->dma_dir = DMA_BIDIRECTIONAL;
+	ret = snps_accel_dmabuf_attach_device(dmabuf, mem->dev,
+					      mbuf, mbuf->dma_dir);
+	if (ret != 0) {
+		dev_err(mem->dev, "Failed to attach dmabuf to device\n");
 		goto err_attach;
 	}
 
-	/* Get the associated scatter list for this buffer */
-	sgt = dma_buf_map_attachment(dba, DMA_BIDIRECTIONAL);
-	if (IS_ERR(sgt)) {
-		dev_err(mem->dev, "Failed to get dmabuf scatter list\n");
-		ret = -EINVAL;
-		goto err_map;
-	}
-	if (!snps_accel_dmabuf_is_contig(sgt)) {
+	if (!snps_accel_dmabuf_is_contig(mbuf->dmasgt)) {
 		ret = -EINVAL;
 		goto err_notcontig;
 	}
 
-	mbuf->size = dba->dmabuf->size;
-	mbuf->dmabuf = dba->dmabuf;
-	mbuf->da = sg_dma_address(sgt->sgl);
-	mbuf->dmasgt = sgt;
+	mbuf->dev = mem->dev;
+	mbuf->fd = fd;
+	mbuf->dmabuf = dmabuf;
+	mbuf->size = dmabuf->size;
 	mbuf->va = NULL;
-	mbuf->import_attach = dba;
 
 	mutex_lock(&mem->list_lock);
 	list_add(&mbuf->ctx_link, &mem->mlist);
@@ -388,9 +427,9 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 	return 0;
 
 err_notcontig:
-	dma_buf_unmap_attachment(dba, sgt, DMA_BIDIRECTIONAL);
-err_map:
-	dma_buf_detach(dmabuf, dba);
+	dma_buf_unmap_attachment(mbuf->import_attach, mbuf->dmasgt,
+				 mbuf->dma_dir);
+	dma_buf_detach(dmabuf, mbuf->import_attach);
 err_attach:
 	kfree(mbuf);
 err_alloc:
@@ -408,14 +447,18 @@ int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd)
 		dev_err(mem->dev, "Failed to find imported dmabuf with fd %d\n", fd);
 		return -EINVAL;
 	}
-	snsp_accel_dmabuf_detach_import(mbuf);
 
-	mutex_lock(&mem->list_lock);
-	list_del(&mbuf->ctx_link);
-	mutex_unlock(&mem->list_lock);
+	/* This check allows to call detach safely for non-imported buffers */
+	if (mbuf->ctx == NULL) {
+		snps_accel_dmabuf_detach_device(mbuf);
 
-	kfree(mbuf);
-	snps_accel_file_priv_put(fpriv);
+		mutex_lock(&mem->list_lock);
+		list_del(&mbuf->ctx_link);
+		mutex_unlock(&mem->list_lock);
+
+		kfree(mbuf);
+		snps_accel_file_priv_put(fpriv);
+	}
 
 	return 0;
 }
