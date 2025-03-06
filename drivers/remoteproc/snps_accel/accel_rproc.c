@@ -27,7 +27,7 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 	 * If npu-cfg property is specified, setup NPU Cluster Network and
 	 * powerup/reset cluster groups
 	 */
-	if (aproc->first_load) {
+	if (aproc->first_load || aproc->cluster_restart) {
 		if (aproc->data->setup_cluster)
 			aproc->data->setup_cluster(aproc);
 		aproc->first_load = 0;
@@ -396,6 +396,7 @@ static int snps_accel_rproc_probe(struct platform_device *pdev)
 	 * rproc->sysfs_read_only = true;
 	 */
 
+	aproc->cluster_restart = of_property_read_bool(of_node, "snps,cluster-restart");
 	/* Get Cores ID to work with */
 	aproc->num_cores_start = of_property_count_u32_elems(of_node, "snps,arcsync-core-id");
 	if (aproc->num_cores_start < 0) {
