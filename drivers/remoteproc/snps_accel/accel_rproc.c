@@ -486,8 +486,15 @@ arcsync_start_core(struct snps_accel_rproc *aproc)
 	u32 status;
 	int i;
 
-	for (i = 0; i < aproc->num_cores_start; i++) {
+	/*
+	 * Assert reset line for all cores before initialization to enable setup for
+	 * all cores regardless of core reset configuration
+	 */
+	for (i = 0; i < aproc->num_cores_start; i++)
 		fn->reset(ctrl, aproc->cluster_id, aproc->core_id[i], ARCSYNC_RESET_ASSERT);
+	
+	/* Setup all cores */
+	for (i = 0; i < aproc->num_cores_start; i++) {
 		fn->set_ivt(ctrl, aproc->cluster_id, aproc->core_id[i], aproc->ivt_base);
 		status = fn->get_status(ctrl, aproc->cluster_id, aproc->core_id[i]);
 		if (aproc->ctrl.has_pmu && (status & ARCSYNC_CORE_POWERDOWN)) {
@@ -502,9 +509,15 @@ arcsync_start_core(struct snps_accel_rproc *aproc)
 		} else {
 			fn->clk_ctrl(ctrl, aproc->cluster_id, aproc->core_id[i], ARCSYNC_CLK_EN);
 		}
-		fn->reset(ctrl, aproc->cluster_id, aproc->core_id[i], ARCSYNC_RESET_DEASSERT);
-		fn->start(ctrl, aproc->cluster_id, aproc->core_id[i]);
 	}
+
+	/* Deassert reset line for all cores to apply setup for all cores */
+	for (i = 0; i < aproc->num_cores_start; i++)
+		fn->reset(ctrl, aproc->cluster_id, aproc->core_id[i], ARCSYNC_RESET_DEASSERT);
+
+	/* Start all cores */
+	for (i = 0; i < aproc->num_cores_start; i++)
+		fn->start(ctrl, aproc->cluster_id, aproc->core_id[i]);
 
 	return 0;
 }
