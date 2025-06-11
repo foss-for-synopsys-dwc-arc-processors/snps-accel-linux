@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config DRM_ACCEL_SNPS
+	tristate "Synopsys AI accelerator"
+	depends on PM && OF && REMOTEPROC && !REMOTEPROC_CDEV
+	select DMA_SHARED_BUFFER
+	select PM_GENERIC_DOMAINS
+	help
+	  Choose this option if users have one or more AI accelerator system(s)
+	  with Synopsys AI accelerator(s) and management component(s). For example,
+	  Synopsys ARC NPX NPU (Neural Processing Unit) processor, ARC VPX DSP
+	  (Digitial Signal Processing) processor, and/or management component(s)
+	  which can be used for synchronization and control of multiple processors
+	  assembled in the AI accelerator system(s). Please note the driver doesn't
+	  work with DRM for now.
+
+	  If "M" is selected, the module will be called snps_accel.
+
+config DRM_ACCEL_SNPS_DEBUG
+	bool "Synopsys AI accelerator debug mode"
+	depends on DRM_ACCEL_SNPS
+	help
+	  Choose this option to enable additional debug features.

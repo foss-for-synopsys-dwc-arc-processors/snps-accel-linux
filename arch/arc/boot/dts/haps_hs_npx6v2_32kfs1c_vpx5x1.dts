@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2025 Synopsys, Inc. (www.synopsys.com)
+ */
+/dts-v1/;
+
+/include/ "skeleton_hs.dtsi"
+
+/ {
+	model = "snps,haps_npp";
+	compatible = "snps,haps_npp";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&core_intc>;
+
+	memory {
+		device_type = "memory";
+		/* CONFIG_LINUX_RAM_BASE needs to match low mem start */
+		reg = <0x0 0xb0000000 0x0 0x10000000	/* 256 MB low mem */
+		       0x1 0x00000000 0x0 0x40000000>;	/* 1 GB highmem */
+	};
+
+	chosen {
+		bootargs = "earlycon=uart8250,mmio32,0xd5008000,19200n8 console=ttyS0,19200n8 debug print-fatal-signals=1 drm.debug=0";
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	fpga {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/*
+		 * only perip space at end of low mem accessible
+		 * bus addr,  parent bus addr, size
+		 */
+		ranges = <0x80000000 0x0 0x80000000 0x80000000>;
+
+		core_clk: core_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <4000000>;
+		};
+
+		core_intc: interrupt-controller {
+			compatible = "snps,archs-intc";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		uart0: serial@d50080000 {
+			compatible = "ns16550a";
+			reg = <0xd5008000 0x1000>;
+			interrupts = <18>;
+			clock-frequency = <4000000>;
+			baud = <19200>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			no-loopback-test = <1>;
+		};
+	};
+
+	accel_mgr0: accel_mgr@d4000000 {
+		compatible = "snps,accel-arcsync", "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reg = <0x0 0xd4000000 0x0 0x54000>;
+		ranges;
+		interrupts = <24>;
+		snps,accel-mgr-id = <0>;
+		snps,power-always-on;
+		snps,host-processor-id = <2>;
+		snps,host-core-id = <0>;
+		snps,num-vpx-processors = <1>;
+
+		accel_system0: accel_system@0x90000000 {
+			compatible = "snps,accel-system", "simple-bus";
+			#address-cells = <2>;
+			#size-cells = <2>;
+			reg = <0x0 0x90000000 0x0 0x10000000>,
+			      <0x0 0x8f000000 0x0 0x10000>;
+			reg-names = "host_shrmem", "dev_shrmem";
+			ranges;
+			snps,accel-system-id = <0>;
+			snps,mgr-irq-indexes = <0>;
+			snps,zero-dev-shrmem;
+
+			accel_proc0: accel_proc@0x80000000 {
+				compatible = "snps,accel-npx6-v2";
+				reg = <0x0 0x80000000 0x0 0x1000000>,
+				      <0x0 0x8e000000 0x0 0x1000000>,
+				      <0x0 0x10000000 0x0 0x1000000>,
+				      <0x0 0xd3000000 0x0 0x86000>,
+				      <0x0 0xe0000000 0x0 0x10000000>;
+				reg-names = "fwmem_l2", "fwmem", "fwvmem", "npx_dmi_cfg", "npx_dmi";
+				firmware-name = "Deployment_l1.elf";
+				snps,firmware-name-l2 = "Deployment_l2.elf";
+				/*
+				 * reg = <0x0 0x80000000 0x0 0x1000000>,
+				 *       <0x0 0x81000000 0x0 0x1000000>,
+				 *       <0x0 0x82000000 0x0 0x1000000>,
+				 *       <0x0 0x83000000 0x0 0x1000000>,
+				 *       <0x0 0x84000000 0x0 0x1000000>,
+				 *       <0x0 0x85000000 0x0 0x1000000>,
+				 *       <0x0 0x86000000 0x0 0x1000000>,
+				 *       <0x0 0x87000000 0x0 0x1000000>,
+				 *       <0x0 0x88000000 0x0 0x1000000>,
+				 *       <0x0 0xd3000000 0x0 0x86000>,
+				 *       <0x0 0xe0000000 0x0 0x10000000>;
+				 * reg-names = "fwmem_core0",
+				 *             "fwmem_core1",
+				 *             "fwmem_core2",
+				 *             "fwmem_core3",
+				 *             "fwmem_core4",
+				 *             "fwmem_core5",
+				 *             "fwmem_core6",
+				 *             "fwmem_core7",
+				 *             "fwmem_core8",
+				 *             "npx_dmi_cfg",
+				 *             "npx_dmi";
+				 * snps,firmware-name-core0 = "Deployment_l2.elf";
+				 * snps,firmware-name-core1 = "Deployment_l1_c0.elf";
+				 * snps,firmware-name-core2 = "Deployment_l1_c1.elf";
+				 * snps,firmware-name-core3 = "Deployment_l1_c2.elf";
+				 * snps,firmware-name-core4 = "Deployment_l1_c3.elf";
+				 * snps,firmware-name-core5 = "Deployment_l1_c4.elf";
+				 * snps,firmware-name-core6 = "Deployment_l1_c5.elf";
+				 * snps,firmware-name-core7 = "Deployment_l1_c6.elf";
+				 * snps,firmware-name-core8 = "Deployment_l1_c7.elf";
+				 */
+				snps,accel-processor-id = <0>;
+				snps,num-cores = <10>;
+				snps,unused-core-ids = <2>, <3>, <4>, <5>, <6>, <7>, <8>, <9>;
+				snps,csm-size-mb = <8>;
+				/* 0: QM (default); 1: ASIL-B; 2: Reserved; 3: ASIL-D */
+				snps,safety-level = <1>;
+				snps,forbid-rpm-cfg;
+				/* snps,forbid-rpm-powerdown; */
+				/* snps,forbid-rpm-clock; */
+				/* snps,autosuspend-delay-ms = <5000>; */
+				/* snps,save-halt-timeout-ms = <1000>; */
+			};
+
+			accel_proc1: accel_proc@0xc0001000 {
+				compatible = "snps,accel-vpx5";
+				reg = <0x0 0xc0001000 0x0 0x1000000>;
+				reg-names = "fwmem";
+				firmware-name = "Deployment_vpx.elf";
+				snps,accel-processor-id = <1>;
+				snps,cluster-block-id = <0>;
+				snps,csm-block-id = <1>;
+				snps,num-cores = <1>;
+				/* snps,forbid-rpm-clock; */
+				/* snps,forbid-rpm-suspend; */
+			};
+		};
+	};
+};

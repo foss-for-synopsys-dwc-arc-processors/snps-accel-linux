@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2025 Synopsys, Inc. (www.synopsys.com)
+ */
+/dts-v1/;
+
+/include/ "skeleton_hs.dtsi"
+
+/ {
+	model = "snps,haps_npp";
+	compatible = "snps,haps_npp";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&core_intc>;
+
+	memory {
+		device_type = "memory";
+		/* CONFIG_LINUX_RAM_BASE needs to match low mem start */
+		reg = <0x0 0xb0000000 0x0 0x10000000	/* 256 MB low mem */
+		       0x1 0x00000000 0x0 0x40000000>;	/* 1 GB highmem */
+	};
+
+	chosen {
+		bootargs = "earlycon=uart8250,mmio32,0xd5008000,19200n8 console=ttyS0,19200n8 debug print-fatal-signals=1 drm.debug=0";
+	};
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		reserved: buffer@bc000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x0 0xbc000000 0x0 0x04000000>;
+			linux,cma-default;
+		};
+	};
+
+	fpga {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* only perip space at end of low mem accessible
+			  bus addr,  parent bus addr, size    */
+		ranges = <0x80000000 0x0 0x80000000 0x80000000>;
+
+		core_clk: core_clk {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <4000000>;
+		};
+
+		core_intc: interrupt-controller {
+			compatible = "snps,archs-intc";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		uart0: serial@d50080000 {
+			compatible = "ns16550a";
+			reg = <0xd5008000 0x1000>;
+			interrupts = <18>;
+			clock-frequency = <4000000>;
+			baud = <19200>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			no-loopback-test = <1>;
+		};
+	};
+};
