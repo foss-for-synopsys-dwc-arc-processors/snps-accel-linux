@@ -65,6 +65,7 @@ struct snps_npu_cn {
 	u32 stu_per_grp;
 	u32 safety_lvl;
 	u32 map_start;
+	u32 skip_setup;
 };
 
 /**
