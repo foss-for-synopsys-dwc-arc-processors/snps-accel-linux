@@ -59,6 +59,10 @@ static int snps_accel_rproc_stop(struct rproc *rproc)
 	if (aproc->data->stop_core)
 		aproc->data->stop_core(aproc);
 
+	if (aproc->cluster_restart)
+		if (aproc->data->stop_cluster)
+			aproc->data->stop_cluster(aproc);
+
 	return 0;
 }
 
@@ -553,12 +557,14 @@ static int arcsync_stop_core(struct snps_accel_rproc *aproc)
 
 static const struct snps_accel_rproc_dev_data vpx_def_conf = {
 	.setup_cluster		= NULL,
+	.stop_cluster		= NULL,
 	.start_core		= arcsync_start_core,
 	.stop_core		= arcsync_stop_core,
 };
 
 static const struct snps_accel_rproc_dev_data npx_def_conf = {
 	.setup_cluster		= npx_setup_cluster_default,
+	.stop_cluster		= npx_stop_cluster_default,
 	.start_core		= arcsync_start_core,
 	.stop_core		= arcsync_stop_core,
 };
