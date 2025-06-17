@@ -493,6 +493,7 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 	npu->cn.safety_lvl = NPU_DEF_SAFETY_LEVEL;
 	npu->cn.csm_size = NPU_DEF_CSM_SIZE;
 	npu->cn.map_start = NPX_DEF_CLN_MAP_START;
+	npu->cn.skip_setup = 0;
 
 	/* Get groups properties and update defaults */
 	of_property_read_u32(npu_cfg_np, "snps,npu-slice-num",
@@ -518,8 +519,8 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 		else
 			npu->cn.num_grps = 4;
 	}
-
 	npu->cn.slice_per_grp = npu->cn.num_slices / npu->cn.num_grps;
+	npu->cn.skip_setup = of_property_read_bool(npu_cfg_np, "snps,skip-cln-setup");
 
 	dev_dbg(npu->device, "NPU slice num: %d\n", npu->cn.num_slices);
 	dev_dbg(npu->device, "Num grps: %d\n", npu->cn.num_grps);
@@ -536,12 +537,15 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 		npx_powerup_cluster_grps(npu);
 	else
 		npx_clk_en_cluster_grps(npu);
+
 	/* Setup Cluster Network */
-	npx_config_l2_grp(cfg_ptr, &npu->cn);
-	for (i = 0; i < npu->cn.num_grps; i++) {
-		dev_dbg(npu->device, "Config L1 group %d\n", i);
-		npx_config_cln_grp(cfg_ptr, &npu->cn, i);
-		npx_config_remap(cfg_ptr, &npu->cn, i);
+	if (!npu->cn.skip_setup) {
+		npx_config_l2_grp(cfg_ptr, &npu->cn);
+		for (i = 0; i < npu->cn.num_grps; i++) {
+			dev_dbg(npu->device, "Config L1 group %d\n", i);
+			npx_config_cln_grp(cfg_ptr, &npu->cn, i);
+			npx_config_remap(cfg_ptr, &npu->cn, i);
+		}
 	}
 
 	iounmap(cfg_ptr);
