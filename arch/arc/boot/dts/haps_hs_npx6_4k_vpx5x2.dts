@@ -75,7 +75,8 @@
 
 	npu_cfg0: npu_cfg@d3000000 {
 		reg = <0x0 0xd3000000 0x0 0xF4000>;
-		snps,npu-slice-num = <2>;
+		snps,npu-slice-num = <1>;
+		snps,skip-cln-setup;
 	};
 
 	arcsync0: arcsync@d4000000 {
@@ -97,9 +98,8 @@
 			reg = <0x18000000 0x01000000>;
 			firmware-name = "Deployment_vpx.elf";
 			snps,arcsync-ctrl = <&arcsync0>;
-			snps,arcsync-core-id = <0x0>;
+			snps,arcsync-core-id = <0x0 0x1>;
 			snps,arcsync-cluster-id = <0x1>;
-			snps,auto-boot;
 		};
 
 		remoteproc_npx0: remoteproc_npx@0x5000000 {
@@ -107,10 +107,10 @@
 			reg = <0x20000000 0x2000000>;
 			firmware-name = "Deployment_l2.elf";
 			snps,npu-cfg = <&npu_cfg0>;
+			snps,cluster-restart;
 			snps,arcsync-ctrl = <&arcsync0>;
 			snps,arcsync-core-id = <0x0>;
 			snps,arcsync-cluster-id = <0x0>;
-			snps,auto-boot;
 		};
 
 		remoteproc_npx1: remoteproc_npx@0x8000000 {
@@ -120,7 +120,6 @@
 			snps,arcsync-ctrl = <&arcsync0>;
 			snps,arcsync-core-id = <0x1>;
 			snps,arcsync-cluster-id = <0x0>;
-			snps,auto-boot;
 		};
 
 		app_npx2: app_npx@2 {
@@ -129,5 +128,6 @@
 			snps,arcsync-ctrl = <&arcsync0>;
 			interrupts = <24>;
 		};
+
 	};
 };
