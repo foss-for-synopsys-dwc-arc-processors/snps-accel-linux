@@ -797,7 +797,7 @@
 			compatible = "arm,mmu-500";
 			reg = <0x0 0xfd800000 0x0 0x20000>;
 			#iommu-cells = <1>;
-			status = "disabled";
+			status = "okay";
 			#global-interrupts = <1>;
 			interrupt-parent = <&gic>;
 			interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_HIGH>,
@@ -1071,6 +1071,64 @@
 				port@5 {
 					reg = <5>;
 				};
+			};
+		};
+	};
+	
+	pl-bus {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+
+		arcsync: arcsync_top@a4000000 {
+			clock-names = "arcsync_axi_clk", "arcsync_clk";
+			clocks = <&zynqmp_clk 71>, <&zynqmp_clk 71>;
+			compatible = "snps,arcsync";
+			interrupt-names = "h0host_irq";
+			interrupt-parent = <&gic>;
+			interrupts = <0 90 4>, /* GIC interrupt 122 - 32 = 90, irq_idx = 0, this interrupt is used by ARCsync for the host */
+				<0 89 4>; /* GIC interrupt 121 - 32 = 89, irq_idx = 1 */
+			reg = <0x00 0xa4000000 0x00 0x2000000>;
+			snps,host-core-id = <0x00>;
+			snps,host-cluster-id = <0x02>;
+		};
+
+		reserved-memory {
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+
+			buffer@0 {
+				compatible = "removed-dma-pool";
+				no-map;
+				reg = <0x00 0x2b000000 0x00 0x200000>;
+			};
+		};
+
+		snps_accel@0 {
+			compatible = "snps,accel", "simple-bus";
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			reg = <0x00 0x2b000000 0x00 0x200000>;
+			ranges = <0x2b000000 0x00 0x2b000000 0x200000>;
+			#stream-id-cells = <0x01>;
+			iommus = <&smmu 0x12c0>;
+
+			remoteproc_vpx@2B000000 {
+				compatible = "snps,vpx-rproc";
+				reg = <0x2b000000 0x100000>;
+				firmware-name = "dmabuf-rw-app.elf";
+				snps,arcsync-ctrl = <&arcsync>;
+				snps,arcsync-core-id = <0x00>;
+				snps,arcsync-cluster-id = <0x01>;
+			};
+
+			app_vpx@0 {
+				compatible = "snps,accel-app";
+				reg = <0x2b100000 0x8000>;
+				snps,arcsync-ctrl = <&arcsync>;
+				snps,arcsync-irq-idx = <0x00>;
+				snps,dma-bits = <0x1f>;
 			};
 		};
 	};

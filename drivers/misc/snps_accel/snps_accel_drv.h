@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2024 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2024-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
 #ifndef _SNPS_ACCEL_DRV_H
@@ -55,6 +55,7 @@ struct snps_accel_app {
 	resource_size_t shmem_size;
 	resource_size_t ctrl_base;
 	resource_size_t ctrl_size;
+	struct device *parent;
 };
 
 /**
