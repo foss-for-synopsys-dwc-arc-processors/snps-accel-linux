@@ -25,7 +25,7 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 
 	/* Allocate buffer in direct memory */
 	page = dma_alloc_pages(dmabuf_dev, PAGE_ALIGN(size), &mbuf->da,
-			       dma_dir, GFP_KERNEL | __GFP_NOWARN);
+				dma_dir, GFP_KERNEL | __GFP_NOWARN);
 	if (!page) {
 		dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
 		return NULL;
@@ -61,7 +61,7 @@ snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem,
 	mutex_unlock(&mem->list_lock);
 
 	dma_free_pages(mbuf->dev, mbuf->size,
-		       virt_to_page(mbuf->va),
+					virt_to_page(mbuf->va),
 					mbuf->alloc_da, dma_dir);
 
 	kfree(mbuf);
@@ -372,10 +372,8 @@ int snps_accel_app_dmabuf_info(struct snps_accel_dmabuf_info *info)
 	info->addr = mbuf->da;
 	info->size = mbuf->size;
 
-	dev_dbg(mbuf->dev,
-			"dmabuf info: va/pa/da 0x%llx/0x%llx/0x%llx, size %zu\n",
-			(unsigned long long)mbuf->va, (unsigned long long)mbuf->pa,
-			(unsigned long long)mbuf->da, mbuf->size);
+	dev_dbg(mbuf->dev, "dmabuf info: va/pa/da %px/%pa/%pad, size %zu\n",
+			mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
 
 	dma_buf_put(dmabuf);
 	return 0;

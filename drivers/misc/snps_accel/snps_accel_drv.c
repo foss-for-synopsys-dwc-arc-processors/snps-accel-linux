@@ -545,9 +545,8 @@ static int snps_accel_probe(struct platform_device *pdev)
 	accel_dev->shared_base = res->start;
 	accel_dev->shared_size = resource_size(res);
 
-	dev_dbg(&pdev->dev, "shared memory start 0x%llx, size 0x%llx\n",
-			(unsigned long long)accel_dev->shared_base,
-			(unsigned long long)accel_dev->shared_size);
+	dev_dbg(&pdev->dev, "shared memory start %pa, size %pa\n",
+			&accel_dev->shared_base, &accel_dev->shared_size);
 
 	dev_set_drvdata(&pdev->dev, accel_dev);
 	ret = snps_accel_create_devs(pdev);

@@ -660,7 +660,7 @@ arcsync_get_interrupt(struct arcsync_device *arcsync, u32 idx)
  */
 static int
 arcsync_set_interrupt_callback(struct device *dev, u32 idx,
-			       intr_callback_t func, void *data)
+			intr_callback_t func, void *data)
 {
 	struct arcsync_callback *cb;
 	struct arcsync_interrupt *intr;
@@ -696,7 +696,7 @@ arcsync_set_interrupt_callback(struct device *dev, u32 idx,
  */
 static int
 arcsync_remove_interrupt_callback(struct device *dev, u32 idx,
-				  void *data)
+				void *data)
 {
 	struct arcsync_interrupt *intr;
 	struct arcsync_callback *cb;

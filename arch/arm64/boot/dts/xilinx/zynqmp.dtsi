@@ -2,7 +2,7 @@
 /*
  * dts file for Xilinx ZynqMP
  *
- * (C) Copyright 2014 - 2021, Xilinx, Inc.
+ * (C) Copyright 2014 - 2025, Xilinx, Inc.
  *
  * Michal Simek <michal.simek@amd.com>
  *
@@ -1109,25 +1109,39 @@
 			compatible = "snps,accel", "simple-bus";
 			#address-cells = <0x01>;
 			#size-cells = <0x01>;
+			/* Parent node address-celss and size-cells must be set to 2 */
+			/* 2MB shared memory: 1 - IPC memory, 2 - VPX firmware memory */
 			reg = <0x00 0x2b000000 0x00 0x200000>;
+			/* 1: 0x2B000000 - child address, 2: 0x0 0x2B000000 - parent address, 3: 0x200000 - child size */
 			ranges = <0x2b000000 0x00 0x2b000000 0x200000>;
 			#stream-id-cells = <0x01>;
+			/* Stream ID = TBU4 (0b100 << 10) | S_AXI_HP1_FPD Master ID (0b1001 << 6) | AXI ID (0) */
 			iommus = <&smmu 0x12c0>;
 
 			remoteproc_vpx@2B000000 {
 				compatible = "snps,vpx-rproc";
+				/* VPX firmware memory, must be the same as in the accel-ping linker script link_cmd.txt */
+				/* This size is the firmware footprint size */
 				reg = <0x2b000000 0x100000>;
 				firmware-name = "dmabuf-rw-app.elf";
 				snps,arcsync-ctrl = <&arcsync>;
 				snps,arcsync-core-id = <0x00>;
 				snps,arcsync-cluster-id = <0x01>;
+				/* Disable ARC core booting during Linux kernel booting for debugging purposes */
+				/* snps,auto-boot; */
 			};
 
 			app_vpx@0 {
 				compatible = "snps,accel-app";
+				/* IPC memory, must be the same as in SHR_MEM_START in VPX firmware */
 				reg = <0x2b100000 0x8000>;
 				snps,arcsync-ctrl = <&arcsync>;
+				/* Device tree interrupt 0x59(89) -> GIC interrupt 0x79(121) -> Host CPU interrupt 0x2C(44) */
+				/* Use irq index in arcsync interrupts array instead of the GIC irq id */
+				/* This index must be the same as the GIC interrupt 122 index in the arcsync node interrupts */
+				/* ARCsync v0c0arc_irq1_a -> VPX irq19_a in the FPGA bitfile */
 				snps,arcsync-irq-idx = <0x00>;
+				/* How many address bits the VPX master can use for DMA to system RAM */
 				snps,dma-bits = <0x1f>;
 			};
 		};
