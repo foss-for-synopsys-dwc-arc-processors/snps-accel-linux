@@ -2,7 +2,7 @@
 /*
  * Synopsys VPX/NPX remoteporc driver
  *
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
 #include <linux/module.h>
@@ -12,6 +12,8 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
+#include <linux/mm.h>
+#include <asm/cacheflush.h>
 
 #include "../remoteproc_elf_helpers.h"
 #include "../remoteproc_internal.h"
@@ -45,6 +47,21 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 static int snps_accel_rproc_start(struct rproc *rproc)
 {
 	struct snps_accel_rproc *aproc = rproc->priv;
+#if defined(CONFIG_ARM64)
+	u32 num_mems = aproc->num_mems;
+	struct snps_accel_rproc_mem *mem = aproc->mem;
+	int i;
+	unsigned long start;
+	unsigned long end;
+
+	for (i = 0; i < num_mems; i++) {
+		start = (unsigned long)mem[i].virt_addr;
+		end = start + mem[i].size;
+
+		if (mem[i].is_ram == REGION_INTERSECTS)
+			dcache_clean_inval_poc(start, end); // ARM64-specific function
+	}
+#endif
 
 	if (aproc->data->start_core)
 		aproc->data->start_core(aproc);
@@ -267,6 +284,7 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 	int num_mems;
 	int ret;
 	int i;
+	unsigned long flags;
 
 	/* Get accelerator aperture base */
 	ret = of_address_to_resource(dev->of_node->parent, 0, &shared_mem);
@@ -310,9 +328,15 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 			return -EINVAL;
 		}
 
+		aproc->mem[i].is_ram = region_intersects(res->start, resource_size(res),
+								IORESOURCE_SYSTEM_RAM, IORES_DESC_NONE);
+		if (aproc->mem[i].is_ram == REGION_INTERSECTS)
+			flags = MEMREMAP_WB;
+		else
+			flags = MEMREMAP_WT;
+
 		aproc->mem[i].virt_addr = devm_memremap(dev, res->start,
-							resource_size(res),
-							MEMREMAP_WC);
+							resource_size(res), flags);
 		if (IS_ERR(aproc->mem[i].virt_addr)) {
 			dev_err(dev, "Failed to map shared memory (%pap)\n",
 				&res->start);
