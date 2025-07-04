@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
 #include <linux/dma-mapping.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -588,7 +589,7 @@ err_chr:
 err_class:
 	return ret;
 }
-module_init(snps_accel_init);
+late_initcall(snps_accel_init);
 
 static void __exit snps_accel_exit(void)
 {
