@@ -2,9 +2,10 @@
 /*
  * Synopsys VPX/NPX remoteporc driver
  *
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/firmware.h>
 #include <linux/iopoll.h>
@@ -580,7 +581,18 @@ static struct platform_driver snps_accel_rproc_driver = {
 	},
 };
 
-module_platform_driver(snps_accel_rproc_driver);
+static int __init snps_accel_rproc_driver_init(void)
+{
+	return platform_driver_register(&snps_accel_rproc_driver);
+}
+
+static void __exit snps_accel_rproc_driver_exit(void)
+{
+	platform_driver_unregister(&snps_accel_rproc_driver);
+}
+
+late_initcall(snps_accel_rproc_driver_init);
+module_exit(snps_accel_rproc_driver_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Synopsys VPX/NPX remote processor control driver");
