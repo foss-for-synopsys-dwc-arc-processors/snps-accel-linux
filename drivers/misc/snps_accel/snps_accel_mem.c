@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
 #include <linux/dma-buf.h>
@@ -17,20 +17,21 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 	struct page *page;
 	struct snps_accel_mem_buffer *mbuf = NULL;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
+	struct device *dmabuf_dev = mem->dev->parent;
 
 	mbuf = kzalloc(sizeof(*mbuf), GFP_KERNEL);
 	if (!mbuf)
 		return NULL;
 
 	/* Allocate buffer in direct memory */
-	page = dma_alloc_pages(mem->dev, PAGE_ALIGN(size), &mbuf->da,
-			       dma_dir, GFP_KERNEL | __GFP_NOWARN);
+	page = dma_alloc_pages(dmabuf_dev, PAGE_ALIGN(size), &mbuf->da,
+				dma_dir, GFP_KERNEL | __GFP_NOWARN);
 	if (!page) {
 		dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
 		return NULL;
 	}
 	mbuf->ctx = mem;
-	mbuf->dev = mem->dev;
+	mbuf->dev = dmabuf_dev;
 	mbuf->va = page_address(page);
 	mbuf->pa =  page_to_pfn(page) << PAGE_SHIFT;
 	mbuf->size = PAGE_ALIGN(size);
@@ -370,6 +371,9 @@ int snps_accel_app_dmabuf_info(struct snps_accel_dmabuf_info *info)
 	info->addr = mbuf->da;
 	info->size = mbuf->size;
 
+	dev_dbg(mbuf->dev, "dmabuf info: va/pa/da %px/%pa/%pad, size %zu\n",
+			mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
+
 	dma_buf_put(dmabuf);
 	return 0;
 }
@@ -385,6 +389,7 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 	struct snps_accel_mem_buffer *mbuf;
 	int ret;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
+	struct device *dmabuf_dev = mem->dev->parent;
 
 	dmabuf = dma_buf_get(fd);
 	if (IS_ERR_OR_NULL(dmabuf)) {
@@ -400,6 +405,7 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 	}
 
 	mbuf->dma_dir = DMA_BIDIRECTIONAL;
+	mbuf->dev = dmabuf_dev;
 	ret = snps_accel_dmabuf_attach_device(dmabuf, mem->dev,
 					      mbuf, mbuf->dma_dir);
 	if (ret != 0) {
@@ -412,7 +418,6 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 		goto err_notcontig;
 	}
 
-	mbuf->dev = mem->dev;
 	mbuf->fd = fd;
 	mbuf->dmabuf = dmabuf;
 	mbuf->size = dmabuf->size;

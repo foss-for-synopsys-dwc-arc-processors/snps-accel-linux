@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
 #include <linux/dma-mapping.h>
@@ -358,6 +358,7 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	struct snps_accel_device *accel_dev = dev_get_drvdata(&pdev->dev);
 	struct resource ctrl;
 	struct resource shmem;
+	u32 dma_bits = 32;
 
 	ret = snps_accel_get_ctrl_mem(node, &ctrl);
 	if (ret < 0) {
@@ -414,11 +415,24 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	}
 
 	accel_app->device->dma_mask = pdev->dev.dma_mask;
-	ret = dma_set_coherent_mask(accel_app->device, DMA_BIT_MASK(32));
+	ret = of_property_read_u32(node, "snps,dma-bits", &dma_bits);
+	if (ret) {
+		dev_warn(accel_app->device, "snps,dma-bits DTS property read error %d, use %u\n",
+				ret, dma_bits);
+	}
+	ret = dma_set_coherent_mask(accel_app->device, DMA_BIT_MASK(dma_bits));
 	if (ret) {
 		dev_err(accel_app->device, "No suitable coherent DMA available\n");
 		goto err_app_dev_init;
 	}
+	ret = dma_set_mask(accel_app->device, DMA_BIT_MASK(dma_bits));
+	if (ret) {
+		dev_err(accel_app->device, "No suitable DMA available\n");
+		goto err_app_dev_init;
+	}
+	dev_dbg(accel_app->device, "dma mask 0x%llx, coherent 0x%llx\n",
+			accel_app->device->dma_mask ? *accel_app->device->dma_mask : 0,
+			accel_app->device->coherent_dma_mask);
 
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
@@ -524,6 +538,9 @@ static int snps_accel_probe(struct platform_device *pdev)
 	}
 	accel_dev->shared_base = res->start;
 	accel_dev->shared_size = resource_size(res);
+
+	dev_dbg(&pdev->dev, "shared memory start %pa, size %pa\n",
+			&accel_dev->shared_base, &accel_dev->shared_size);
 
 	dev_set_drvdata(&pdev->dev, accel_dev);
 	ret = snps_accel_create_devs(pdev);
