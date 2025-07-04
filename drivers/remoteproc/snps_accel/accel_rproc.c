@@ -2,9 +2,10 @@
 /*
  * Synopsys VPX/NPX remoteporc driver
  *
- * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/firmware.h>
 #include <linux/iopoll.h>
@@ -12,6 +13,8 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
+#include <linux/mm.h>
+#include <asm/cacheflush.h>
 
 #include "../remoteproc_elf_helpers.h"
 #include "../remoteproc_internal.h"
@@ -45,6 +48,22 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 static int snps_accel_rproc_start(struct rproc *rproc)
 {
 	struct snps_accel_rproc *aproc = rproc->priv;
+	u32 num_mems = aproc->num_mems;
+	struct snps_accel_rproc_mem *mem = aproc->mem;
+
+#if defined(CONFIG_ARM64)
+	int i;
+	unsigned long start;
+	unsigned long end;
+
+	for (i = 0; i < num_mems; i++) {
+		start = (unsigned long)mem[i].virt_addr;
+		end = start + mem[i].size;
+
+		if (mem[i].is_ram == REGION_INTERSECTS)
+			dcache_clean_inval_poc(start, end); // ARM64-specific function
+	}
+#endif
 
 	if (aproc->data->start_core)
 		aproc->data->start_core(aproc);
@@ -267,6 +286,7 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 	int num_mems;
 	int ret;
 	int i;
+	unsigned long flags;
 
 	/* Get accelerator aperture base */
 	ret = of_address_to_resource(dev->of_node->parent, 0, &shared_mem);
@@ -310,9 +330,15 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 			return -EINVAL;
 		}
 
+		aproc->mem[i].is_ram = region_intersects(res->start, resource_size(res),
+								IORESOURCE_SYSTEM_RAM, IORES_DESC_NONE);
+		if (aproc->mem[i].is_ram == REGION_INTERSECTS)
+			flags = MEMREMAP_WB;
+		else
+			flags = MEMREMAP_WT;
+
 		aproc->mem[i].virt_addr = devm_memremap(dev, res->start,
-							resource_size(res),
-							MEMREMAP_WC);
+							resource_size(res), flags);
 		if (IS_ERR(aproc->mem[i].virt_addr)) {
 			dev_err(dev, "Failed to map shared memory (%pap)\n",
 				&res->start);
@@ -580,7 +606,18 @@ static struct platform_driver snps_accel_rproc_driver = {
 	},
 };
 
-module_platform_driver(snps_accel_rproc_driver);
+static int __init snps_accel_rproc_driver_init(void)
+{
+	return platform_driver_register(&snps_accel_rproc_driver);
+}
+
+static void __exit snps_accel_rproc_driver_exit(void)
+{
+	platform_driver_unregister(&snps_accel_rproc_driver);
+}
+
+late_initcall(snps_accel_rproc_driver_init);
+module_exit(snps_accel_rproc_driver_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Synopsys VPX/NPX remote processor control driver");
