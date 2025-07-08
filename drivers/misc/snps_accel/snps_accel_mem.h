@@ -56,7 +56,7 @@ void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem);
 struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem_ctx *mem,
 							   u64 size, u32 dflags);
 void snps_accel_app_dmabuf_release(struct snps_accel_mem_buffer *mbuf);
-int snps_accel_app_dmabuf_info(struct snps_accel_dmabuf_info *info);
+int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel_dmabuf_info *info);
 int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd);
 int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd);
 
