@@ -359,7 +359,7 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 	return mbuf;
 }
 
-int snps_accel_app_dmabuf_info(struct snps_accel_dmabuf_info *info)
+int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel_dmabuf_info *info)
 {
 	struct dma_buf *dmabuf;
 	struct snps_accel_mem_buffer *mbuf;
@@ -368,7 +368,13 @@ int snps_accel_app_dmabuf_info(struct snps_accel_dmabuf_info *info)
 	if (!dmabuf)
 		return -EINVAL;
 
-	mbuf = (struct snps_accel_mem_buffer *)dmabuf->priv;
+	mbuf = snps_accel_dmabuf_find_by_fd(mem, info->fd);
+	if (!mbuf) {
+		dev_err(mem->dev, "Failed to find dmabuf with fd %d\n", info->fd);
+		dma_buf_put(dmabuf);
+		return -EINVAL;
+	}
+
 	info->addr = mbuf->da;
 	info->size = mbuf->size;
 
