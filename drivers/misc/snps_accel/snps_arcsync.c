@@ -5,13 +5,12 @@
  * ARCsync - small module for synchronization and control of multiple
  * ARC processors assembled in a heterogeneous sub-system.
  *
- * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
  */
 
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/log2.h>
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
@@ -634,12 +633,12 @@ arcsync_power_ctrl_cluster_group(struct device *dev, u32 clid, u32 grp, u32 cmd)
 }
 
 static struct arcsync_interrupt *
-arcsync_get_interrupt(struct arcsync_device *arcsync, u32 idx)
+arcsync_get_interrupt(struct arcsync_device *arcsync, u32 irq)
 {
 	int i;
 
 	for (i = 0; i < arcsync->num_irqs; i++) {
-		if (arcsync->irq[i].idx == idx)
+		if (arcsync->irq[i].irqnum == irq)
 			return &arcsync->irq[i];
 	}
 
@@ -649,7 +648,7 @@ arcsync_get_interrupt(struct arcsync_device *arcsync, u32 idx)
 /**
  * arcsync_set_interrupt_callback() - add callback for ARCSync interrupt handler
  * @dev: arcsync device handle
- * @idx: arcsync irq index
+ * @irq: irq num
  * @func: callback function pointer
  * @data: data pointer
  *
@@ -659,14 +658,14 @@ arcsync_get_interrupt(struct arcsync_device *arcsync, u32 idx)
  * Return: 0 on success or negative errno on failure.
  */
 static int
-arcsync_set_interrupt_callback(struct device *dev, u32 idx,
-			intr_callback_t func, void *data)
+arcsync_set_interrupt_callback(struct device *dev, u32 irq,
+			       intr_callback_t func, void *data)
 {
 	struct arcsync_callback *cb;
 	struct arcsync_interrupt *intr;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 
-	intr = arcsync_get_interrupt(arcsync, idx);
+	intr = arcsync_get_interrupt(arcsync, irq);
 	if (intr == NULL)
 		return -EINVAL;
 
@@ -687,7 +686,7 @@ arcsync_set_interrupt_callback(struct device *dev, u32 idx,
 /**
  * arcsync_remove_interrupt_callback() - remove interrupt handler callback
  * @dev: arcsync device handle
- * @idx: arcsync irq index
+ * @irq: irq num
  * @data: data pointer
  *
  * Remove the callback from an interrupt callback list.
@@ -695,15 +694,15 @@ arcsync_set_interrupt_callback(struct device *dev, u32 idx,
  * Return: 0 on success or negative errno on failure.
  */
 static int
-arcsync_remove_interrupt_callback(struct device *dev, u32 idx,
-				void *data)
+arcsync_remove_interrupt_callback(struct device *dev, u32 irq,
+				  void *data)
 {
 	struct arcsync_interrupt *intr;
 	struct arcsync_callback *cb;
 	struct arcsync_callback *remove_cb = NULL;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 
-	intr = arcsync_get_interrupt(arcsync, idx);
+	intr = arcsync_get_interrupt(arcsync, irq);
 	if (intr == NULL)
 		return -EINVAL;
 
@@ -919,7 +918,7 @@ static int arcsync_probe(struct platform_device *pdev)
 			return ret;
 		}
 		arcsync->irq[i].irqnum = ret;
-		arcsync->irq[i].idx = i; /* arcsync irq index  */
+		arcsync->irq[i].idx = i;
 		arcsync->irq[i].arcsync = arcsync;
 		spin_lock_init(&arcsync->irq[i].callbacks_list_lock);
 		INIT_LIST_HEAD(&arcsync->irq[i].callbacks_list);

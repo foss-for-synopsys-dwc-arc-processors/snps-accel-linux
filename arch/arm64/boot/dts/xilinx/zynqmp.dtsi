@@ -945,9 +945,10 @@
 				snps,arcsync-ctrl = <&arcsync>;
 				/* Device tree interrupt 0x59(89) -> GIC interrupt 0x79(121) -> Host CPU interrupt 0x2C(44) */
 				/* Use irq index in arcsync interrupts array instead of the GIC irq id */
-				/* This index must be the same as the GIC interrupt 122 index in the arcsync node interrupts */
+				interrupt-parent = <&gic>;
+				/* This interrupt must be the same as the GIC interrupt 122 index in the arcsync node interrupts */
 				/* ARCsync v0c0arc_irq1_a -> VPX irq19_a in the FPGA bitfile */
-				snps,arcsync-irq-idx = <0x00>;
+				interrupts = <0 90 4>;
 				/* How many address bits the VPX master can use for DMA to system RAM */
 				snps,dma-bits = <0x1f>;
 			};

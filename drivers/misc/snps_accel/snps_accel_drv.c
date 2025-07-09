@@ -330,10 +330,6 @@ static irqreturn_t snps_accel_app_irq_callback(int irq, void *dev)
 	atomic_inc(&accel_app->irq_event);
 	wake_up_interruptible(&accel_app->wait);
 
-	dev_dbg(accel_app->device,
-			"ARCsync interrupt callback: irq %d, irqnum 0x%x, count %u\n",
-			irq, accel_app->irq_num, atomic_read(&accel_app->irq_event));
-
 	return IRQ_HANDLED;
 }
 
@@ -422,7 +418,7 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	accel_app->device->dma_mask = pdev->dev.dma_mask;
 	ret = of_property_read_u32(node, "snps,dma-bits", &dma_bits);
 	if (ret) {
-		dev_warn(accel_app->device, "dma-bits read error %d, use %u\n",
+		dev_warn(accel_app->device, "snps,dma-bits DTS property read error %d, use %u\n",
 				ret, dma_bits);
 	}
 	ret = dma_set_coherent_mask(accel_app->device, DMA_BIT_MASK(dma_bits));
@@ -441,16 +437,15 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
-	of_property_read_u32(node, "snps,arcsync-irq-idx", &accel_app->irq_num);
 	if (accel_app->irq_num >= 0) {
 		ret = accel_app->ctrl.fn.set_interrupt_callback(accel_app->ctrl.dev,
 					accel_app->irq_num,
 					snps_accel_app_irq_callback, accel_app);
 		if (!ret) {
 			init_waitqueue_head(&accel_app->wait);
-			dev_dbg(accel_app->device, "App IRQ idx: %d\n", accel_app->irq_num);
+			dev_dbg(accel_app->device, "App IRQ: %d\n", accel_app->irq_num);
 		} else {
-			dev_warn(accel_app->device, "Not ARCSync IRQ idx %d\n", accel_app->irq_num);
+			dev_warn(accel_app->device, "Not ARCSync IRQ %d\n", accel_app->irq_num);
 			accel_app->irq_num = -EINVAL;
 		}
 	} else {

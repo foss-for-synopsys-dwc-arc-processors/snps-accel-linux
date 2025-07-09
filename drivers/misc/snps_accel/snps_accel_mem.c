@@ -30,7 +30,6 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 		dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
 		return NULL;
 	}
-	mbuf->alloc_da = mbuf->da;
 	mbuf->ctx = mem;
 	mbuf->dev = dmabuf_dev;
 	mbuf->va = page_address(page);
@@ -61,8 +60,8 @@ snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem,
 	mutex_unlock(&mem->list_lock);
 
 	dma_free_pages(mbuf->dev, mbuf->size,
-					virt_to_page(mbuf->va),
-					mbuf->alloc_da, dma_dir);
+		       virt_to_page(mbuf->va),
+		       mbuf->da, dma_dir);
 
 	kfree(mbuf);
 	snps_accel_file_priv_put(fpriv);
@@ -117,7 +116,8 @@ static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
 		return PTR_ERR(sgt);
 	}
 
-	mbuf->da = sg_dma_address(sgt->sgl);
+	if (mbuf->ctx == NULL)
+		mbuf->da = sg_dma_address(sgt->sgl);
 	mbuf->dmasgt = sgt;
 	mbuf->import_attach = dba;
 
