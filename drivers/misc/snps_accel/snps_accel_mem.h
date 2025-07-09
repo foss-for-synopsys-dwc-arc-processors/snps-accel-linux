@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2024-2025 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2024 Synopsys, Inc. (www.synopsys.com)
  */
 
 #ifndef _SNPS_ACCEL_MEM_H
@@ -31,7 +31,6 @@ struct snps_accel_mem_buffer {
 	struct dma_buf *dmabuf;
 	enum dma_data_direction dma_dir;
 	int fd;
-	dma_addr_t alloc_da;
 	dma_addr_t da;
 	void *va;
 	phys_addr_t pa;

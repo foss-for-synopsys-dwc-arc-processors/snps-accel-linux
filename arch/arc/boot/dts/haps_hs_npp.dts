@@ -94,7 +94,6 @@
 			compatible = "snps,accel-app";
 			reg = <0x20000000 0x10000000>;
 			snps,arcsync-ctrl = <&arcsync0>;
-			snps,arcsync-irq-idx = <0>;
 			snps,dma-bits = <32>;
 		};
 	};

@@ -55,7 +55,6 @@ struct snps_accel_app {
 	resource_size_t shmem_size;
 	resource_size_t ctrl_base;
 	resource_size_t ctrl_size;
-	struct device *parent;
 };
 
 /**
