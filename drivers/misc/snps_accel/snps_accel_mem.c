@@ -116,7 +116,8 @@ static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
 		return PTR_ERR(sgt);
 	}
 
-	mbuf->da = sg_dma_address(sgt->sgl);
+	if (mbuf->ctx == NULL)
+		mbuf->da = sg_dma_address(sgt->sgl);
 	mbuf->dmasgt = sgt;
 	mbuf->import_attach = dba;
 
