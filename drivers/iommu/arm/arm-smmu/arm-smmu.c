@@ -906,6 +906,9 @@ static void arm_smmu_write_s2cr(struct arm_smmu_device *smmu, int idx)
 		return;
 	}
 
+	if (smmu->smrs[idx].id == 0xE80)
+		s2cr->type = S2CR_TYPE_BYPASS;
+
 	reg = FIELD_PREP(ARM_SMMU_S2CR_TYPE, s2cr->type) |
 	      FIELD_PREP(ARM_SMMU_S2CR_CBNDX, s2cr->cbndx) |
 	      FIELD_PREP(ARM_SMMU_S2CR_PRIVCFG, s2cr->privcfg);
