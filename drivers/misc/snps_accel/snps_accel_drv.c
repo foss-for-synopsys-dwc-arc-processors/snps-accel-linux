@@ -116,7 +116,7 @@ snps_accel_do_dmabuf_alloc(struct snps_accel_file_priv *fpriv, char __user *argp
 }
 
 static int
-snps_accel_do_dmabuf_info(char __user *argp)
+snps_accel_do_dmabuf_info(struct snps_accel_file_priv *fpriv, char __user *argp)
 {
 	struct snps_accel_dmabuf_info data;
 	int ret;
@@ -125,7 +125,7 @@ snps_accel_do_dmabuf_info(char __user *argp)
 			  sizeof(struct snps_accel_dmabuf_info)))
 		return -EFAULT;
 
-	ret = snps_accel_app_dmabuf_info(&data);
+	ret = snps_accel_app_dmabuf_info(&fpriv->mem, &data);
 	if (ret)
 		return ret;
 
@@ -239,7 +239,7 @@ snps_accel_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		err = snps_accel_do_dmabuf_alloc(fpriv, argp);
 		break;
 	case SNPS_ACCEL_IOCTL_DMABUF_INFO:
-		err = snps_accel_do_dmabuf_info(argp);
+		err = snps_accel_do_dmabuf_info(fpriv, argp);
 		break;
 	case SNPS_ACCEL_IOCTL_DMABUF_IMPORT:
 		err = snps_accel_do_dmabuf_import(fpriv, argp);
