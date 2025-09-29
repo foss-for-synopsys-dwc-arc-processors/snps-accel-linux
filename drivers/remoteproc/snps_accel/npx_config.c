@@ -365,7 +365,27 @@ static int npx_powerup_core(struct snps_accel_rproc *aproc, u32 clid, u32 cid)
 	return count ? 0 : -EBUSY;
 }
 
-static int npx_reset_cluster_grps(struct snps_accel_rproc *aproc)
+static int npx_powerdown_core(struct snps_accel_rproc *aproc, u32 clid, u32 cid)
+{
+	struct device *ctrl = aproc->ctrl.dev;
+	const struct snps_accel_rproc_ctrl_fn *fn = &aproc->ctrl.fn;
+	int count = 10;
+
+	if (!(fn->get_status(ctrl, clid, cid) & ARCSYNC_CORE_POWERDOWN)) {
+		fn->halt(ctrl, clid, cid);
+		while (!(fn->get_status(ctrl, clid, cid) & ARCSYNC_CORE_HALTED) && --count)
+			udelay(1);
+		fn->clk_ctrl(ctrl, clid, cid, ARCSYNC_CLK_DIS);
+		fn->power_ctrl(ctrl, clid, cid, ARCSYNC_POWER_DOWN);
+		count = 10;
+		while (!(fn->get_status(ctrl, clid, cid) & ARCSYNC_CORE_POWERDOWN) && --count)
+			udelay(1);
+	}
+
+	return count ? 0 : -EBUSY;
+}
+
+static int npx_reset_cluster_grps(struct snps_accel_rproc *aproc, u32 rst_code)
 {
 	struct device *ctrl = aproc->ctrl.dev;
 	const struct snps_accel_rproc_ctrl_fn *fn = &aproc->ctrl.fn;
@@ -375,21 +395,21 @@ static int npx_reset_cluster_grps(struct snps_accel_rproc *aproc)
 
 	if (aproc->ctrl.ver == 2) {
 		fn->reset_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP,
-					ARCSYNC_RESET_DEASSERT);
+					rst_code);
 		/* reset L2C cores inside the L2 group */
-		fn->reset(ctrl, clid, NPX_COREID_L2C0, ARCSYNC_RESET_DEASSERT);
+		fn->reset(ctrl, clid, NPX_COREID_L2C0, rst_code);
 		if (aproc->cn.num_slices >= 8)
 			fn->reset(ctrl, clid, aproc->cn.num_slices + 1,
-				  ARCSYNC_RESET_DEASSERT);
+				  rst_code);
 
 		for (grp = 0; grp < aproc->cn.num_grps; grp++) {
 			fn->reset_cluster_group(ctrl, clid, ARCSYNC_NPX_L1GRP0 + grp,
-						ARCSYNC_RESET_DEASSERT);
+						rst_code);
 			/* reset cores inside the group */
 			for (i = 0; i < aproc->cn.slice_per_grp; i++)
 				fn->reset(ctrl, clid,
 					  NPX_COREID_L1C0 + grp * aproc->cn.slice_per_grp + i,
-					  ARCSYNC_RESET_DEASSERT);
+					  rst_code);
 		}
 	}
 
@@ -432,7 +452,39 @@ static int npx_powerup_cluster_grps(struct snps_accel_rproc *aproc)
 	return 0;
 }
 
-static int npx_clk_en_cluster_grps(struct snps_accel_rproc *aproc)
+static int npx_powerdown_cluster_grps(struct snps_accel_rproc *aproc)
+{
+	struct device *ctrl = aproc->ctrl.dev;
+	const struct snps_accel_rproc_ctrl_fn *fn = &aproc->ctrl.fn;
+	u32 clid = aproc->cluster_id;
+	int slice_offset;
+	int grp;
+	int i;
+
+	if (aproc->ctrl.ver == 2) {
+		for (grp = 0; grp < aproc->cn.num_grps; grp++) {
+			fn->clk_ctrl_cluster_group(ctrl, clid,
+						   ARCSYNC_NPX_L1GRP0 + grp,
+						   ARCSYNC_CLK_DIS);
+			fn->power_ctrl_cluster_group(ctrl, clid,
+						     ARCSYNC_NPX_L1GRP0 + grp,
+						     ARCSYNC_POWER_DOWN);
+			slice_offset = grp * aproc->cn.slice_per_grp;
+			for (i = 0; i < aproc->cn.slice_per_grp; i++)
+				npx_powerdown_core(aproc, clid,
+						 NPX_COREID_L1C0 + slice_offset + i);
+		}
+		fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_CLK_DIS);
+		fn->power_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_POWER_DOWN);
+		npx_powerdown_core(aproc, clid, NPX_COREID_L2C0);
+		if (aproc->cn.num_slices >= 8)
+			npx_powerdown_core(aproc, clid, aproc->cn.num_slices + 1);
+	}
+
+	return 0;
+}
+
+static int npx_clk_ctrl_cluster_grps(struct snps_accel_rproc *aproc, u32 ctrl_val)
 {
 	struct device *ctrl = aproc->ctrl.dev;
 	const struct snps_accel_rproc_ctrl_fn *fn = &aproc->ctrl.fn;
@@ -443,17 +495,28 @@ static int npx_clk_en_cluster_grps(struct snps_accel_rproc *aproc)
 	if (aproc->ctrl.ver != 2)
 		return 0;
 
-	fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_CLK_EN);
-	fn->clk_ctrl(ctrl, clid, NPX_COREID_L2C0, ARCSYNC_CLK_EN);
+	fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ctrl_val);
+	fn->clk_ctrl(ctrl, clid, NPX_COREID_L2C0, ctrl_val);
 	if (aproc->cn.num_slices >= 8)
-		fn->clk_ctrl(ctrl, clid, aproc->cn.num_slices + 1, ARCSYNC_CLK_EN);
+		fn->clk_ctrl(ctrl, clid, aproc->cn.num_slices + 1, ctrl_val);
 	for (grp = 0; grp < aproc->cn.num_grps; grp++) {
-		fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L1GRP0 + grp, ARCSYNC_CLK_EN);
+		fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L1GRP0 + grp, ctrl_val);
 		for (i = 0; i < aproc->cn.slice_per_grp; i++)
 			fn->clk_ctrl(ctrl, clid,
 				     NPX_COREID_L1C0 + grp * aproc->cn.slice_per_grp + i,
-				     ARCSYNC_CLK_EN);
+				     ctrl_val);
 	}
+
+	return 0;
+}
+
+int npx_stop_cluster_default(struct snps_accel_rproc *npu)
+{
+	npx_reset_cluster_grps(npu, ARCSYNC_RESET_ASSERT);
+	if (npu->ctrl.has_pmu)
+		npx_powerdown_cluster_grps(npu);
+	else
+		npx_clk_ctrl_cluster_grps(npu, ARCSYNC_CLK_DIS);
 
 	return 0;
 }
@@ -493,6 +556,7 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 	npu->cn.safety_lvl = NPU_DEF_SAFETY_LEVEL;
 	npu->cn.csm_size = NPU_DEF_CSM_SIZE;
 	npu->cn.map_start = NPX_DEF_CLN_MAP_START;
+	npu->cn.skip_setup = 0;
 
 	/* Get groups properties and update defaults */
 	of_property_read_u32(npu_cfg_np, "snps,npu-slice-num",
@@ -518,8 +582,8 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 		else
 			npu->cn.num_grps = 4;
 	}
-
 	npu->cn.slice_per_grp = npu->cn.num_slices / npu->cn.num_grps;
+	npu->cn.skip_setup = of_property_read_bool(npu_cfg_np, "snps,skip-cln-setup");
 
 	dev_dbg(npu->device, "NPU slice num: %d\n", npu->cn.num_slices);
 	dev_dbg(npu->device, "Num grps: %d\n", npu->cn.num_grps);
@@ -531,17 +595,20 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 	dev_dbg(npu->device, "CLN map start: 0x%x\n", npu->cn.map_start);
 
 	/* Reset NPX cluster groups */
-	npx_reset_cluster_grps(npu);
+	npx_reset_cluster_grps(npu, ARCSYNC_RESET_DEASSERT);
 	if (npu->ctrl.has_pmu)
 		npx_powerup_cluster_grps(npu);
 	else
-		npx_clk_en_cluster_grps(npu);
+		npx_clk_ctrl_cluster_grps(npu, ARCSYNC_CLK_EN);
+
 	/* Setup Cluster Network */
-	npx_config_l2_grp(cfg_ptr, &npu->cn);
-	for (i = 0; i < npu->cn.num_grps; i++) {
-		dev_dbg(npu->device, "Config L1 group %d\n", i);
-		npx_config_cln_grp(cfg_ptr, &npu->cn, i);
-		npx_config_remap(cfg_ptr, &npu->cn, i);
+	if (!npu->cn.skip_setup) {
+		npx_config_l2_grp(cfg_ptr, &npu->cn);
+		for (i = 0; i < npu->cn.num_grps; i++) {
+			dev_dbg(npu->device, "Config L1 group %d\n", i);
+			npx_config_cln_grp(cfg_ptr, &npu->cn, i);
+			npx_config_remap(cfg_ptr, &npu->cn, i);
+		}
 	}
 
 	iounmap(cfg_ptr);

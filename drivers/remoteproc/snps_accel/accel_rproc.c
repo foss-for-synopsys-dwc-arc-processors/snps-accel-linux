@@ -48,10 +48,9 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 static int snps_accel_rproc_start(struct rproc *rproc)
 {
 	struct snps_accel_rproc *aproc = rproc->priv;
+#if defined(CONFIG_ARM64)
 	u32 num_mems = aproc->num_mems;
 	struct snps_accel_rproc_mem *mem = aproc->mem;
-
-#if defined(CONFIG_ARM64)
 	int i;
 	unsigned long start;
 	unsigned long end;
@@ -77,6 +76,10 @@ static int snps_accel_rproc_stop(struct rproc *rproc)
 
 	if (aproc->data->stop_core)
 		aproc->data->stop_core(aproc);
+
+	if (aproc->cluster_restart)
+		if (aproc->data->stop_cluster)
+			aproc->data->stop_cluster(aproc);
 
 	return 0;
 }
@@ -579,12 +582,14 @@ static int arcsync_stop_core(struct snps_accel_rproc *aproc)
 
 static const struct snps_accel_rproc_dev_data vpx_def_conf = {
 	.setup_cluster		= NULL,
+	.stop_cluster		= NULL,
 	.start_core		= arcsync_start_core,
 	.stop_core		= arcsync_stop_core,
 };
 
 static const struct snps_accel_rproc_dev_data npx_def_conf = {
 	.setup_cluster		= npx_setup_cluster_default,
+	.stop_cluster		= npx_stop_cluster_default,
 	.start_core		= arcsync_start_core,
 	.stop_core		= arcsync_stop_core,
 };

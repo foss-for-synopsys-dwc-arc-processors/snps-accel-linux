@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (C) 2016-2025 Synopsys, Inc. (www.synopsys.com)
+ * Copyright (C) 2016-2014 Synopsys, Inc. (www.synopsys.com)
  */
 /dts-v1/;
 
@@ -21,11 +21,23 @@
 	};
 
 	chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xd5008000,9600n8 console=ttyS0,9600n8 debug print-fatal-signals=1 drm.debug=0";
+		bootargs = "earlycon=uart8250,mmio32,0xd5008000,19200n8 console=ttyS0,19200n8 debug print-fatal-signals=1 drm.debug=0";
 	};
 
 	aliases {
 		serial0 = &uart0;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		reserved: buffer@bc000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x0 0xBC000000 0x0 0x04000000>;
+			linux,cma-default;
+		};
 	};
 
 	fpga {
@@ -54,7 +66,7 @@
 			reg = <0xd5008000 0x1000>;
 			interrupts = <18>;
 			clock-frequency = <4000000>;
-			baud = <9600>;
+			baud = <19200>;
 			reg-shift = <2>;
 			reg-io-width = <4>;
 			no-loopback-test = <1>;
@@ -64,11 +76,13 @@
 	npu_cfg0: npu_cfg@d3000000 {
 		reg = <0x0 0xd3000000 0x0 0xF4000>;
 		snps,npu-slice-num = <1>;
+		snps,skip-cln-setup;
 	};
 
 	arcsync0: arcsync@d4000000 {
 		compatible = "snps,arcsync";
 		reg = <0x0 0xd4000000 0x0 0x1000000>;
+		snps,host-cluster-id = <0x2>;
 		interrupts = <24>;
 	};
 
@@ -79,23 +93,40 @@
 		reg = <0x0 0x0000000 0x0 0x80000000>;
 		ranges = <0x0 0x0 0x0 0x80000000>;
 
-		remoteproc_npx0: remoteproc_npx@0x8000000 {
+		remoteproc_vpx0: remoteproc_vpx@0x18000000 {
+			compatible = "snps,vpx-rproc";
+			reg = <0x18000000 0x01000000>;
+			firmware-name = "Deployment_vpx.elf";
+			snps,arcsync-ctrl = <&arcsync0>;
+			snps,arcsync-core-id = <0x0>;
+			snps,arcsync-cluster-id = <0x1>;
+		};
+
+		remoteproc_npx0: remoteproc_npx@0x5000000 {
 			compatible = "snps,npx-rproc";
-			reg = <0x8000000 0x2000000>;
-			firmware-name = "npx-app.elf";
+			reg = <0x20000000 0x2000000>;
+			firmware-name = "Deployment_l2.elf";
+			snps,arcsync-ctrl = <&arcsync0>;
+			snps,arcsync-core-id = <0x0>;
+			snps,arcsync-cluster-id = <0x0>;
+		};
+
+		remoteproc_npx1: remoteproc_npx@0x8000000 {
+			compatible = "snps,npx-rproc";
+			reg = <0x10000000 0x2000000>;
 			snps,npu-cfg = <&npu_cfg0>;
+			snps,cluster-restart;
+			firmware-name = "Deployment_l1.elf";
 			snps,arcsync-ctrl = <&arcsync0>;
 			snps,arcsync-core-id = <0x1>;
 			snps,arcsync-cluster-id = <0x0>;
-			snps,auto-boot;
 		};
 
-		app_npx0: app_npx@0 {
+		app_npx2: app_npx@2 {
 			compatible = "snps,accel-app";
-			reg = <0x20000000 0x10000000>;
+			reg = <0x30000000 0x10000000>;
 			snps,arcsync-ctrl = <&arcsync0>;
 			interrupts = <24>;
-			snps,dma-bits = <32>;
 		};
 	};
 };
