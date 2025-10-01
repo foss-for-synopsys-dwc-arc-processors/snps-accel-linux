@@ -19,6 +19,13 @@
 #include "../remoteproc_elf_helpers.h"
 #include "../remoteproc_internal.h"
 
+#if defined(CONFIG_ARM64)
+#include <linux/io.h>
+#include <asm/cputype.h>
+#include <asm/sysreg.h>
+#include <linux/cache.h>
+#endif
+
 #include "accel_rproc.h"
 
 static int snps_accel_rproc_prepare(struct rproc *rproc)
@@ -45,6 +52,28 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 	return 0;
 }
 
+#if defined(CONFIG_ARM64) && defined (KBUILD_EXTMOD)
+static inline void dcache_clean_inval(void *addr, size_t size)
+{
+	unsigned long line_size = cache_line_size();
+	uintptr_t start = (uintptr_t)addr & ~(line_size - 1);
+	uintptr_t end = (uintptr_t)addr + size;
+
+	asm volatile(
+		"1:\n"
+		"   dc civac, %0\n"
+		"   add %0, %0, %2\n"
+		"   cmp %0, %1\n"
+		"   b.lt 1b\n"
+		"   dsb sy\n"
+		"   isb\n"
+		: "+r"(start)
+		: "r"(end), "r"(line_size)
+		: "memory"
+	);
+}
+#endif
+
 static int snps_accel_rproc_start(struct rproc *rproc)
 {
 	struct snps_accel_rproc *aproc = rproc->priv;
@@ -60,7 +89,11 @@ static int snps_accel_rproc_start(struct rproc *rproc)
 		end = start + mem[i].size;
 
 		if (mem[i].is_ram == REGION_INTERSECTS)
-			dcache_clean_inval_poc(start, end); // ARM64-specific function
+#if defined (KBUILD_EXTMOD)
+			dcache_clean_inval(start, end - start);
+#else
+			dcache_clean_inval_poc(start, end);
+#endif
 	}
 #endif
 
