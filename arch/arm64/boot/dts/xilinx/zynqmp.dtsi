@@ -711,6 +711,9 @@
 			#clock-cells = <1>;
 			clock-output-names = "clk_out_sd1", "clk_in_sd1";
 			power-domains = <&zynqmp_firmware PD_SD_1>;
+			resets = <&zynqmp_reset ZYNQMP_RESET_SDIO1>;
+			/* TBU2 (0b10 << 10) | SD1 Master ID (0b0001 << 6) | AXI ID (0b110001), see UG1085 "Master IDs List" and "TBU instances" */
+			iommus = <&smmu 0x871>;
 		};
 
 		smmu: iommu@fd800000 {
