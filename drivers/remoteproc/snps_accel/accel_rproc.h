@@ -36,6 +36,7 @@ struct snps_accel_rproc_mem {
  */
 struct snps_accel_rproc_dev_data {
 	int (*setup_cluster)(struct snps_accel_rproc *aproc);
+	int (*stop_cluster)(struct snps_accel_rproc *aproc);
 	int (*start_core)(struct snps_accel_rproc *aproc);
 	int (*stop_core)(struct snps_accel_rproc *aproc);
 };
@@ -68,6 +69,7 @@ struct snps_npu_cn {
 	u32 stu_per_grp;
 	u32 safety_lvl;
 	u32 map_start;
+	u32 skip_setup;
 };
 
 /**
@@ -135,5 +137,6 @@ struct snps_accel_rproc {
 };
 
 int npx_setup_cluster_default(struct snps_accel_rproc *npu);
+int npx_stop_cluster_default(struct snps_accel_rproc *npu);
 
 #endif

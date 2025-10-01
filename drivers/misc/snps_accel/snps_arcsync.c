@@ -151,6 +151,7 @@ struct arcsync_interrupt {
 	struct arcsync_device *arcsync;
 	u32 irqnum;
 	u32 idx;
+	char name[32];
 	spinlock_t callbacks_list_lock;
 	struct list_head callbacks_list;
 };
@@ -888,7 +889,6 @@ static int arcsync_probe(struct platform_device *pdev)
 	u32 cores_per_cluster;
 	u32 hcluster_id = 0;
 	u32 hcore_id = 0;
-	char irq_name[20];
 	int ret;
 	int i;
 
@@ -978,12 +978,22 @@ static int arcsync_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, arcsync);
 
 	for (i = 0; i < arcsync->num_irqs; i++) {
+		const char *name = NULL;
+
 		dev_dbg(&pdev->dev, "Request IRQ: %d\n", arcsync->irq[i].irqnum);
-		sprintf(irq_name, "arcsync-host%d", i);
+
+		of_property_read_string_index(node, "interrupt-names", i, &name);
+		if (name)
+			snprintf(arcsync->irq[i].name, sizeof(arcsync->irq[i].name),
+				 "arcsync%d-%s", arcsync->arcnet_id, name);
+		else
+			snprintf(arcsync->irq[i].name, sizeof(arcsync->irq[i].name),
+				 "arcsync%d-irq%d", arcsync->arcnet_id, i);
+
 		ret = devm_request_irq(arcsync->dev, arcsync->irq[i].irqnum,
 				       arcsync_interrupt,
 				       IRQF_SHARED,
-				       irq_name,
+				       arcsync->irq[i].name,
 				       &arcsync->irq[i]);
 		if (ret) {
 			dev_err(&pdev->dev, "Failed to set interrupt handler for %d IRQ\n",
