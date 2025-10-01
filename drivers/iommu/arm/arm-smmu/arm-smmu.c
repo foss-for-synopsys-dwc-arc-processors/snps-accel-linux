@@ -2,7 +2,7 @@
 /*
  * IOMMU API for ARM architected SMMU implementations.
  *
- * Copyright (C) 2013 ARM Limited
+ * Copyright (C) 2013-2025 ARM Limited
  *
  * Author: Will Deacon <will.deacon@arm.com>
  *
@@ -924,6 +924,9 @@ static void arm_smmu_write_s2cr(struct arm_smmu_device *smmu, int idx)
 		smmu->impl->write_s2cr(smmu, idx);
 		return;
 	}
+
+	if (smmu->smrs[idx].id == 0xE80)
+		s2cr->type = S2CR_TYPE_BYPASS;
 
 	reg = FIELD_PREP(ARM_SMMU_S2CR_TYPE, s2cr->type) |
 	      FIELD_PREP(ARM_SMMU_S2CR_CBNDX, s2cr->cbndx) |
