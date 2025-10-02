@@ -365,7 +365,7 @@ int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel
 	struct snps_accel_mem_buffer *mbuf;
 
 	dmabuf = dma_buf_get(info->fd);
-	if (!dmabuf)
+	if (IS_ERR(dmabuf))
 		return -EINVAL;
 
 	mbuf = snps_accel_dmabuf_find_by_fd(mem, info->fd);
