@@ -13,10 +13,14 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
+#if IS_ENABLED(CONFIG_OF_IOMMU)
 #include <linux/of.h>
 #include <linux/of_iommu.h>
 #include <linux/iommu.h>
 #include <linux/device.h>
+#include <linux/fwnode.h>
+#include <linux/dma-map-ops.h>
+#endif
 
 #include <uapi/misc/snps_accel.h>
 #include "snps_accel_drv.h"
