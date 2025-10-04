@@ -359,7 +359,8 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 	return mbuf;
 }
 
-int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel_dmabuf_info *info)
+int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem,
+		struct snps_accel_dmabuf_info *info)
 {
 	struct dma_buf *dmabuf;
 	struct snps_accel_mem_buffer *mbuf;
@@ -378,8 +379,8 @@ int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel
 	info->addr = mbuf->da;
 	info->size = mbuf->size;
 
-	dev_dbg(mbuf->dev, "dmabuf info: va/pa/da %px/%pa/%pad, size %zu\n",
-			mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
+	dev_dbg(mbuf->dev, "dmabuf info: fd %d, va/pa/da %px/%pa/%pad, size %zu\n",
+			info->fd, mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
 
 	dma_buf_put(dmabuf);
 	return 0;
