@@ -526,25 +526,6 @@ static void snps_accel_release_app(struct snps_accel_app *accel_app)
 		fn->remove_interrupt_callback(accel_app->ctrl.dev,
 					      accel_app->irq_num, accel_app);
 
-#if IS_ENABLED(CONFIG_IOMMU_API)
-	{
-		struct iommu_group *group;
-		struct iommu_domain *domain;
-
-		group = iommu_group_get(accel_app->device);
-		if (!group)
-			goto iommu_exit;
-
-		domain = iommu_get_domain_for_dev(accel_app->device);
-		if (domain) {
-			iommu_detach_device(domain, accel_app->device);
-			iommu_domain_free(domain);
-		}
-
-		iommu_exit:
-	}
-#endif
-
 	device_destroy(snps_accel_class, accel_app->devt);
 	cdev_del(&accel_app->cdev);
 }
