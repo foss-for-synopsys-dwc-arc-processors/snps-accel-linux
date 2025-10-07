@@ -882,6 +882,8 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	if (!vrp)
 		return -ENOMEM;
 
+	dev_dbg(&vdev->dev, "rpmsg_probe: allocated memory for vrp");
+
 	vrp->vdev = vdev;
 
 	idr_init(&vrp->endpoints);
@@ -889,10 +891,14 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	mutex_init(&vrp->tx_lock);
 	init_waitqueue_head(&vrp->sendq);
 
+	dev_dbg(&vdev->dev, "rpmsg_probe: trying to find virtio queues");
+
 	/* We expect two virtqueues, rx and tx (and in this order) */
 	err = virtio_find_vqs(vdev, 2, vqs, vq_cbs, names, NULL);
 	if (err)
 		goto free_vrp;
+
+	dev_dbg(&vdev->dev, "rpmsg_probe: successfully found virtio queues");
 
 	vrp->rvq = vqs[0];
 	vrp->svq = vqs[1];
@@ -911,6 +917,8 @@ static int rpmsg_probe(struct virtio_device *vdev)
 
 	total_buf_space = vrp->num_bufs * vrp->buf_size;
 
+	dev_dbg(&vdev->dev, "rpmsg_probe: trying to allocate memory for buffers");
+
 	/* allocate coherent memory for the buffers */
 	bufs_va = dma_alloc_coherent(vdev->dev.parent,
 				     total_buf_space, &vrp->bufs_dma,
@@ -920,7 +928,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		goto vqs_del;
 	}
 
-	dev_dbg(&vdev->dev, "buffers: va %pK, dma %pad\n",
+	dev_dbg(&vdev->dev, "buffers: va %pS, dma %pad\n",
 		bufs_va, &vrp->bufs_dma);
 
 	/* half of the buffers is dedicated for RX */

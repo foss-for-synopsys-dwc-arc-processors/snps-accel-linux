@@ -93,8 +93,17 @@ irqreturn_t rproc_vq_interrupt(struct rproc *rproc, int notifyid)
 	dev_dbg(&rproc->dev, "vq index %d is interrupted\n", notifyid);
 
 	rvring = idr_find(&rproc->notifyids, notifyid);
+
+	if (!rvring)
+		dev_dbg(&rproc->dev, "rvring %d is not found\n", notifyid);
+
+	if (rvring && !rvring->vq)
+		dev_dbg(&rproc->dev, "rvring->vq %d is not found\n", notifyid);
+
 	if (!rvring || !rvring->vq)
 		return IRQ_NONE;
+
+	dev_dbg(&rproc->dev, "passing vq %d to vring_interrupt\n", notifyid);
 
 	return vring_interrupt(0, rvring->vq);
 }
@@ -122,11 +131,16 @@ static struct virtqueue *rp_find_vq(struct virtio_device *vdev,
 	if (!name)
 		return NULL;
 
+	dev_dbg(dev, "trying to find a carveout for vdev%dvring%d", rvdev->index, id);
+
 	/* Search allocated memory region by name */
 	mem = rproc_find_carveout_by_name(rproc, "vdev%dvring%d", rvdev->index,
 					  id);
 	if (!mem || !mem->va)
+	{
+		dev_err(dev, "failed to find a carveout\n");
 		return ERR_PTR(-ENOMEM);
+	}
 
 	rvring = &rvdev->vring[id];
 	addr = mem->va;
@@ -136,8 +150,8 @@ static struct virtqueue *rp_find_vq(struct virtio_device *vdev,
 	size = vring_size(num, rvring->align);
 	memset(addr, 0, size);
 
-	dev_dbg(dev, "vring%d: va %pK qsz %d notifyid %d\n",
-		id, addr, num, rvring->notifyid);
+	dev_dbg(dev, "vring%d: va %pS da 0x%x pa %pad qsz %d notifyid %d\n",
+		id, addr, mem->da, &mem->dma, num, rvring->notifyid);
 
 	/*
 	 * Create the new vq, and tell virtio we're not interested in
@@ -189,11 +203,15 @@ static int rproc_virtio_find_vqs(struct virtio_device *vdev, unsigned int nvqs,
 {
 	int i, ret, queue_idx = 0;
 
+	dev_dbg(&vdev->dev, "rproc_virtio_find_vqs: trying to find vqs");
+
 	for (i = 0; i < nvqs; ++i) {
 		if (!names[i]) {
 			vqs[i] = NULL;
 			continue;
 		}
+
+		dev_dbg(&vdev->dev, "rproc_virtio_find_vqs: trying to find vqs[%u]", i);
 
 		vqs[i] = rp_find_vq(vdev, queue_idx++, callbacks[i], names[i],
 				    ctx ? ctx[i] : false);
