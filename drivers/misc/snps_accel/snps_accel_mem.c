@@ -17,7 +17,7 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 	struct page *page;
 	struct snps_accel_mem_buffer *mbuf = NULL;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
-	struct device *dmabuf_dev = mem->dev->parent;
+	struct device *dmabuf_dev = mem->dev;
 
 	mbuf = kzalloc(sizeof(*mbuf), GFP_KERNEL);
 	if (!mbuf)
@@ -396,7 +396,7 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 	struct snps_accel_mem_buffer *mbuf;
 	int ret;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
-	struct device *dmabuf_dev = mem->dev->parent;
+	struct device *dmabuf_dev = mem->dev;
 
 	dmabuf = dma_buf_get(fd);
 	if (IS_ERR_OR_NULL(dmabuf)) {
