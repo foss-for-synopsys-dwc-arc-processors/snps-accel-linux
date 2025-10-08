@@ -1001,6 +1001,8 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		if (err)
 			/* vch will be free in virtio_rpmsg_release_device() */
 			goto free_ctrldev;
+
+		dev_dbg(&vdev->dev, "rpmsg_probe: registered NS device");
 	}
 
 	/*
