@@ -11,6 +11,7 @@
 #include <linux/iopoll.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
 #include <linux/mm.h>
@@ -20,6 +21,138 @@
 #include "../remoteproc_internal.h"
 
 #include "accel_rproc.h"
+
+static int snps_accel_rproc_pa_to_da(struct rproc *rproc, phys_addr_t pa, u32 *da)
+{
+	unsigned int i;
+	struct snps_accel_rproc *adata = rproc->priv;
+	struct snps_accel_rproc_mem *mem;
+	phys_addr_t left, right;
+
+	for (i = 0; i < adata->num_mems; i++) {
+		mem = &adata->mem[i];
+
+		left = mem->phys_addr;
+		right = mem->phys_addr + mem->size;
+
+		dev_dbg(rproc->dev.parent, "translate pa to da: is %pa in %pa-%pa?", &pa, &left, &right);
+
+		if (pa < left || pa >= right)
+			continue;
+
+		*da = pa - mem->phys_addr + mem->dev_addr;
+		dev_dbg(rproc->dev.parent, "translated pa %pa to da 0x%x\n", &pa, *da);
+
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+/*
+ * snps_accel_mem_region_map()
+ * @rproc: rproc instance
+ * @mem: mem descriptor to map reserved memory-regions
+ *
+ * Callback to map va for memory-region's carveout.
+ *
+ * return 0 on success, otherwise non-zero value on failure
+ */
+static int snps_accel_mem_region_map(struct rproc *rproc,
+				    struct rproc_mem_entry *mem)
+{
+	void __iomem *va;
+
+	va = ioremap_wc(mem->dma, mem->len);
+	if (IS_ERR_OR_NULL(va))
+		return -ENOMEM;
+
+	mem->va = (void *)va;
+
+	return 0;
+}
+
+/*
+ * snps_accel_mem_region_unmap
+ * @rproc: rproc instance
+ * @mem: mem entry to unmap
+ *
+ * Unmap memory-region carveout
+ *
+ * return: always returns 0
+ */
+static int snps_accel_mem_region_unmap(struct rproc *rproc,
+				      struct rproc_mem_entry *mem)
+{
+	iounmap((void __iomem *)mem->va);
+	return 0;
+}
+
+/*
+ * snps_accel_add_mem_regions_carveout()
+ * @rproc: rproc instance
+ *
+ * Construct rproc mem carveouts from memory-region property nodes
+ *
+ * return 0 on success, otherwise non-zero value on failure
+ */
+static int snps_accel_add_mem_regions_carveout(struct rproc *rproc)
+{
+	struct rproc_mem_entry *rproc_mem;
+	struct device *dev = rproc->dev.parent;
+	struct device_node *np = dev->of_node;
+	struct of_phandle_iterator it;
+	struct reserved_mem *rmem;
+	u32 da;
+	int i = 0;
+
+	/* Register associated reserved memory regions */
+	of_phandle_iterator_init(&it, np, "memory-region", NULL, 0);
+
+	while (of_phandle_iterator_next(&it) == 0) {
+		rmem = of_reserved_mem_lookup(it.node);
+		if (!rmem) {
+			of_node_put(it.node);
+			dev_err(&rproc->dev, "unable to acquire memory-region\n");
+			return -EINVAL;
+		}
+
+		if (snps_accel_rproc_pa_to_da(rproc, rmem->base, &da) != 0) {
+			of_node_put(it.node);
+			dev_err(&rproc->dev, "memory region not valid %pa\n", &rmem->base);
+			return -EINVAL;
+		}
+
+		if (!strcmp(it.node->name, "vdev0buffer")) {
+			/* Init reserved memory for vdev buffer */
+			rproc_mem = rproc_of_resm_mem_entry_init(&rproc->dev, i,
+								 rmem->size,
+								 da,
+								 it.node->name);
+		} else {
+			/* Register associated reserved memory regions */
+			rproc_mem = rproc_mem_entry_init(&rproc->dev, NULL,
+							 (dma_addr_t)rmem->base,
+							 rmem->size, da,
+							 snps_accel_mem_region_map,
+							 snps_accel_mem_region_unmap,
+							 it.node->name);
+		}
+
+		if (!rproc_mem) {
+			of_node_put(it.node);
+			return -ENOMEM;
+		}
+
+		rproc_add_carveout(rproc, rproc_mem);
+
+		dev_dbg(&rproc->dev, "reserved mem carveout %s paddr=%llx, size=0x%llx",
+			it.node->name, rmem->base, rmem->size);
+		i++;
+	}
+
+	return 0;
+}
 
 static int snps_accel_rproc_prepare(struct rproc *rproc)
 {
@@ -42,7 +175,7 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 			memset(aproc->mem[i].virt_addr, 0, aproc->mem[i].size);
 	}
 
-	return 0;
+	return snps_accel_add_mem_regions_carveout(rproc);
 }
 
 static int snps_accel_rproc_start(struct rproc *rproc)
@@ -220,6 +353,11 @@ snps_accel_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len, bool *is_iome
 	return NULL;
 }
 
+static void snps_accel_rproc_kick(struct rproc *rproc, int vqid)
+{
+	dev_dbg(&rproc->dev, "Kicked %d vq", vqid);
+}
+
 static const struct rproc_ops snps_accel_rproc_ops = {
 	.prepare = snps_accel_rproc_prepare,
 	.start = snps_accel_rproc_start,
@@ -228,6 +366,9 @@ static const struct rproc_ops snps_accel_rproc_ops = {
 	.get_boot_addr = rproc_elf_get_boot_addr,
 	.load = snps_accel_rproc_elf_load_segments,
 	.sanity_check = rproc_elf_sanity_check,
+	.kick = snps_accel_rproc_kick,
+	.parse_fw = rproc_elf_load_rsc_table,
+	.find_loaded_rsc_table = rproc_elf_find_loaded_rsc_table,
 };
 
 static void snps_accel_ranges_get_da_offset(struct device *dev, off_t *offset)
