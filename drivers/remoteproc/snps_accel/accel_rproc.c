@@ -15,6 +15,7 @@
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
 #include <linux/mm.h>
+#include <linux/workqueue.h>
 #include <asm/cacheflush.h>
 
 #include "../remoteproc_elf_helpers.h"
@@ -178,6 +179,17 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 	return snps_accel_add_mem_regions_carveout(rproc);
 }
 
+static struct delayed_work rpmsg_check_work;
+static struct rproc *rpmsg_check_work_rproc = NULL;
+
+static void rpmsg_check_work_fn(struct work_struct *work)
+{
+	dev_dbg(&rpmsg_check_work_rproc->dev, "rpmsg_check_work_fn: checking vq interrupts...");
+	rproc_vq_interrupt(rpmsg_check_work_rproc, 0);
+	rproc_vq_interrupt(rpmsg_check_work_rproc, 1);
+	schedule_delayed_work(&rpmsg_check_work, msecs_to_jiffies(2000));
+}
+
 static int snps_accel_rproc_start(struct rproc *rproc)
 {
 	struct snps_accel_rproc *aproc = rproc->priv;
@@ -199,6 +211,10 @@ static int snps_accel_rproc_start(struct rproc *rproc)
 
 	if (aproc->data->start_core)
 		aproc->data->start_core(aproc);
+
+	rpmsg_check_work_rproc = rproc;
+	INIT_DELAYED_WORK(&rpmsg_check_work, rpmsg_check_work_fn);
+	schedule_delayed_work(&rpmsg_check_work, 0);
 
 	return 0;
 }
