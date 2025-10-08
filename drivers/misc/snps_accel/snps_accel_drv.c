@@ -13,6 +13,11 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
+#include <linux/of.h>
+#include <linux/of_iommu.h>
+#include <linux/iommu.h>
+#include <linux/device.h>
+
 #include <uapi/misc/snps_accel.h>
 #include "snps_accel_drv.h"
 
@@ -435,6 +440,19 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 			accel_app->device->dma_mask ? *accel_app->device->dma_mask : 0,
 			accel_app->device->coherent_dma_mask);
 
+#if IS_ENABLED(CONFIG_OF_IOMMU)
+	accel_app->device->bus = pdev->dev.bus;
+	accel_app->device->of_node = node;
+	if (IS_ERR_OR_NULL(of_iommu_configure(accel_app->device, node, NULL))) {
+		dev_warn(accel_app->device, "failed to configure IOMMU\n");
+	}
+	else {
+		if (accel_app->device->dma_ops == NULL && accel_app->device->dma_mask) {
+			iommu_setup_dma_ops(accel_app->device, 0, *accel_app->device->dma_mask);
+		}
+	}
+#endif
+
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
 	if (accel_app->irq_num >= 0) {
@@ -503,6 +521,7 @@ static void snps_accel_release_app(struct snps_accel_app *accel_app)
 	if (accel_app->irq_num >= 0)
 		fn->remove_interrupt_callback(accel_app->ctrl.dev,
 					      accel_app->irq_num, accel_app);
+
 	device_destroy(snps_accel_class, accel_app->devt);
 	cdev_del(&accel_app->cdev);
 }
