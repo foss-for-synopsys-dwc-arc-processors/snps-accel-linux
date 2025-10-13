@@ -26,6 +26,12 @@
 #include <linux/cache.h>
 #endif
 
+#if IS_ENABLED(CONFIG_IOMMU_API)
+#include <linux/iommu.h>
+/* Enable ARC CBU IOMMU bypass so that IOVA equals physical address */
+#define SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS
+#endif
+
 #include "accel_rproc.h"
 
 static int snps_accel_rproc_prepare(struct rproc *rproc)
@@ -512,11 +518,55 @@ static int snps_accel_rproc_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+#if IS_ENABLED(CONFIG_IOMMU_API) && defined(SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
+	struct iommu_group *group = iommu_group_get(dev);
+	if (group) {
+		/* Allocate a new domain */
+		struct iommu_domain *domain = iommu_domain_alloc(dev->bus);
+		if (!domain) {
+			dev_err(dev, "Failed to allocate IOMMU domain\n");
+			iommu_group_put(group);
+			return -ENOMEM;
+		}
+
+		/* Configure allocated domain as an identity domain */
+		domain->type = IOMMU_DOMAIN_IDENTITY;
+
+		/* Attach domain to the device */
+		ret = iommu_attach_device(domain, dev);
+		if (ret) {
+			dev_err(dev, "Failed to attach device to identity domain, error %d\n", ret);
+			iommu_domain_free(domain);
+			iommu_group_put(group);
+			return ret;
+		}
+		dev_dbg(dev, "Attached to IOMMU identity domain\n");
+		iommu_group_put(group);
+	}
+	else {
+		dev_dbg(dev, "No IOMMU found for device\n");
+	}
+#endif
+
 	return 0;
 }
 
 static int snps_accel_rproc_remove(struct platform_device *pdev)
 {
+#if IS_ENABLED(CONFIG_IOMMU_API) && defined(SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
+	struct device *dev = &pdev->dev;
+	struct iommu_group *group = iommu_group_get(dev);
+	if (group) {
+		struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
+		/* Ensure that only the allocated domain is freed */
+		if (domain->type == IOMMU_DOMAIN_IDENTITY) {
+			iommu_detach_device(domain, dev);
+			iommu_domain_free(domain);
+		}
+		iommu_group_put(group);
+	}
+#endif
+
 	return 0;
 }
 
