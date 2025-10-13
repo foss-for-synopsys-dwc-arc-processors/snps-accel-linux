@@ -786,6 +786,8 @@
 			interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
 			reg = <0x0 0xff170000 0x0 0x1000>;
 			clock-names = "clk_xin", "clk_ahb";
+			resets = <&zynqmp_reset ZYNQMP_RESET_SDIO1>;
+			/* TBU2 (0b10 << 10) | SD1 Master ID (0b0001 << 6) | AXI ID (0b110001), see UG1085 "Master IDs List" and "TBU instances" */ 
 			iommus = <&smmu 0x871>;
 			#clock-cells = <1>;
 			clock-output-names = "clk_out_sd1", "clk_in_sd1";
