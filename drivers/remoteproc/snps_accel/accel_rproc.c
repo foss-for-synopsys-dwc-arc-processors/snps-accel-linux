@@ -23,31 +23,13 @@
 
 #include "accel_rproc.h"
 
+static off_t snps_accel_da_offset = 0;
+
 static int snps_accel_rproc_pa_to_da(struct rproc *rproc, phys_addr_t pa, u32 *da)
 {
-	unsigned int i;
-	struct snps_accel_rproc *adata = rproc->priv;
-	struct snps_accel_rproc_mem *mem;
-	phys_addr_t left, right;
-
-	for (i = 0; i < adata->num_mems; i++) {
-		mem = &adata->mem[i];
-
-		left = mem->phys_addr;
-		right = mem->phys_addr + mem->size;
-
-		dev_dbg(rproc->dev.parent, "translate pa to da: is %pa in %pa-%pa?", &pa, &left, &right);
-
-		if (pa < left || pa >= right)
-			continue;
-
-		*da = pa - mem->phys_addr + mem->dev_addr;
-		dev_dbg(rproc->dev.parent, "translated pa %pa to da 0x%x\n", &pa, *da);
-
-		return 0;
-	}
-
-	return -EINVAL;
+	*da = pa + snps_accel_da_offset;
+	dev_dbg(rproc->dev.parent, "translated pa %pa to da 0x%x\n", &pa, *da);
+	return 0;
 }
 
 /*
@@ -470,6 +452,7 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 	 * to be 0.
 	 */
 	snps_accel_ranges_get_da_offset(dev, &shm_da_offset);
+	snps_accel_da_offset = shm_da_offset;
 
 	aproc->mem = devm_kcalloc(dev, num_mems, sizeof(*aproc->mem), GFP_KERNEL);
 	if (!aproc->mem)
