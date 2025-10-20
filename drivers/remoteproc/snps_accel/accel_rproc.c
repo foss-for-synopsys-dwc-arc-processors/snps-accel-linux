@@ -161,15 +161,37 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 	return snps_accel_add_mem_regions_carveout(rproc);
 }
 
+static const unsigned long rpmsg_check_work_delay_ms = 10000;
 static struct delayed_work rpmsg_check_work;
 static struct rproc *rpmsg_check_work_rproc = NULL;
 
 static void rpmsg_check_work_fn(struct work_struct *work)
 {
+	irqreturn_t result;
+
 	dev_dbg(&rpmsg_check_work_rproc->dev, "rpmsg_check_work_fn: checking vq interrupts...");
-	rproc_vq_interrupt(rpmsg_check_work_rproc, 0);
-	rproc_vq_interrupt(rpmsg_check_work_rproc, 1);
-	schedule_delayed_work(&rpmsg_check_work, msecs_to_jiffies(2000));
+
+	result = rproc_vq_interrupt(rpmsg_check_work_rproc, 0);
+
+	if (result == IRQ_NONE) {
+		dev_info(&rpmsg_check_work_rproc->dev, "vq %d: queue is empty", 0);
+	}
+
+	if (result == IRQ_HANDLED) {
+		dev_info(&rpmsg_check_work_rproc->dev, "vq %d: a massage was handled", 0);
+	}
+
+	result = rproc_vq_interrupt(rpmsg_check_work_rproc, 1);
+
+	if (result == IRQ_NONE) {
+		dev_info(&rpmsg_check_work_rproc->dev, "vq %d: queue is empty", 1);
+	}
+
+	if (result == IRQ_HANDLED) {
+		dev_info(&rpmsg_check_work_rproc->dev, "vq %d: a massage was handled", 1);
+	}
+
+	schedule_delayed_work(&rpmsg_check_work, msecs_to_jiffies(rpmsg_check_work_delay_ms));
 }
 
 static int snps_accel_rproc_start(struct rproc *rproc)
