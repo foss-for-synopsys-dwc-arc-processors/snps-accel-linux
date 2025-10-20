@@ -9,6 +9,8 @@
  * Brian Swetland <swetland@google.com>
  */
 
+#define DEBUG 1
+
 #include <linux/dma-direct.h>
 #include <linux/dma-map-ops.h>
 #include <linux/dma-mapping.h>
