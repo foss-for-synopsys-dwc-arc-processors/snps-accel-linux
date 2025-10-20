@@ -9,6 +9,7 @@
  * Brian Swetland <swetland@google.com>
  */
 
+#define DEBUG 1
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/dma-mapping.h>
@@ -882,7 +883,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	if (!vrp)
 		return -ENOMEM;
 
-	dev_dbg(&vdev->dev, "rpmsg_probe: allocated memory for vrp");
+	dev_info(&vdev->dev, "rpmsg_probe: allocated memory for vrp");
 
 	vrp->vdev = vdev;
 
@@ -891,14 +892,14 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	mutex_init(&vrp->tx_lock);
 	init_waitqueue_head(&vrp->sendq);
 
-	dev_dbg(&vdev->dev, "rpmsg_probe: trying to find virtio queues");
+	dev_info(&vdev->dev, "rpmsg_probe: trying to find virtio queues");
 
 	/* We expect two virtqueues, rx and tx (and in this order) */
 	err = virtio_find_vqs(vdev, 2, vqs, vq_cbs, names, NULL);
 	if (err)
 		goto free_vrp;
 
-	dev_dbg(&vdev->dev, "rpmsg_probe: successfully found virtio queues");
+	dev_info(&vdev->dev, "rpmsg_probe: successfully found virtio queues");
 
 	vrp->rvq = vqs[0];
 	vrp->svq = vqs[1];
@@ -917,7 +918,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 
 	total_buf_space = vrp->num_bufs * vrp->buf_size;
 
-	dev_dbg(&vdev->dev, "rpmsg_probe: trying to allocate memory for buffers");
+	dev_info(&vdev->dev, "rpmsg_probe: trying to allocate memory for buffers");
 
 	/* allocate coherent memory for the buffers */
 	bufs_va = dma_alloc_coherent(vdev->dev.parent,
@@ -928,7 +929,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		goto vqs_del;
 	}
 
-	dev_dbg(&vdev->dev, "buffers: va %pS, dma %pad\n",
+	dev_info(&vdev->dev, "buffers: va %pS, dma %pad\n",
 		bufs_va, &vrp->bufs_dma);
 
 	/* half of the buffers is dedicated for RX */
@@ -979,12 +980,14 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		rpdev_ns->dev.parent = &vrp->vdev->dev;
 		rpdev_ns->dev.release = virtio_rpmsg_release_device;
 
+		dev_info(&vdev->dev, "rpmsg_probe: trying to register NS device");
+
 		err = rpmsg_ns_register_device(rpdev_ns);
 		if (err)
 			/* vch will be free in virtio_rpmsg_release_device() */
 			goto free_ctrldev;
 
-		dev_dbg(&vdev->dev, "rpmsg_probe: registered NS device");
+		dev_info(&vdev->dev, "rpmsg_probe: registered NS device");
 	}
 
 	/*
