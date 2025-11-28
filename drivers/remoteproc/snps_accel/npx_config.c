@@ -121,7 +121,7 @@ static void
 npx_config_aperture(void __iomem *ptr, int apidx, phys_addr_t apbase, const u32 apsize, int mst)
 {
 	phys_addr_t base = apbase >> 12;
-	u32 size = ~(apsize - 1) >> 12;
+	u32 size = (~(apsize - 1) >> 12) | 0xFF00000;
 
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
@@ -133,7 +133,7 @@ npx_config_aperture_with_msk(void __iomem *ptr, int apidx, phys_addr_t apbase,
 			     const u32 apsize, int mst, u32 extra_size_msk)
 {
 	phys_addr_t base = apbase >> 12;
-	u32 size = ~(apsize - 1) >> 12;
+	u32 size = (~(apsize - 1) >> 12) | 0xFF00000;
 
 	size = size | (extra_size_msk >> 12);
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
