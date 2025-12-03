@@ -1128,6 +1128,10 @@
 				snps,arcsync-cluster-id = <0x01>;
 				/* Disable ARC core booting during Linux kernel booting for debugging purposes */
 				/* snps,auto-boot; */
+				#stream-id-cells = <1>;
+				/* VPX@0 CBU master interface stream ID's for the SMMU, connected to TBU3:
+				   TBU3 (0b11 << 10) | S_AXI_HP0_FPD Master ID (0b1010 << 6) | AXI ID (0) */
+				iommus = <&smmu 0xE80>;
 			};
 
 			app_vpx@0 {
@@ -1162,7 +1166,7 @@
 				/* How many address bits the VPX master can use for DMA to system RAM */
 				snps,dma-bits = <0x1f>;
 				#stream-id-cells = <0x01>;
-				/* Stream ID = TBU4 (0b100 << 10) | S_AXI_HP1_FPD Master ID (0b1001 << 6) | AXI ID (0) */
+				/* Stream ID = TBU4 (0b100 << 10) | S_AXI_HP1_FPD Master ID (0b1001 << 6) | AXI ID (1) */
 				iommus = <&smmu 0x12c1>;
 			};
 		};
