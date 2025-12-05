@@ -953,6 +953,8 @@
 				/* This interrupt must be the same as the GIC interrupt 122 index in the arcsync node interrupts */
 				/* ARCsync v0c0arc_irq1_a -> VPX irq19_a in the FPGA bitfile */
 				interrupts = <0 90 4>;
+				/* Shared memory mapping protection properties: 0 - noncached, 1 - write-combine */
+				/* snps,pgprot-bits = <1>; */
 				/* How many address bits the VPX master can use for DMA to system RAM */
 				snps,dma-bits = <0x1f>;
 				#stream-id-cells = <0x01>;
@@ -971,6 +973,8 @@
 				/* This interrupt must be the same as the GIC interrupt 122 index in the arcsync node interrupts */
 				/* ARCsync v0c0arc_irq1_a -> VPX irq19_a in the FPGA bitfile */
 				interrupts = <0 90 4>;
+				/* Shared memory mapping protection properties: 0 - noncached, 1 - write-combine */
+				/* snps,pgprot-bits = <1>; */
 				/* How many address bits the VPX master can use for DMA to system RAM */
 				snps,dma-bits = <0x1f>;
 				#stream-id-cells = <0x01>;
