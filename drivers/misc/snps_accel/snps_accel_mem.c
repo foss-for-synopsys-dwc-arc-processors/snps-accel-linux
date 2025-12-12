@@ -131,7 +131,7 @@ snps_accel_dmabuf_detach_device(struct snps_accel_mem_buffer *mbuf)
 		dma_buf_unmap_attachment(mbuf->import_attach, mbuf->dmasgt,
 					 mbuf->dma_dir);
 	dma_buf_detach(mbuf->dmabuf, mbuf->import_attach);
-	dma_buf_put(mbuf->import_attach->dmabuf);
+	dma_buf_put(mbuf->dmabuf);
 }
 
 static void snps_accel_dmabuf_op_release(struct dma_buf *dmabuf)
