@@ -16,8 +16,8 @@
 #include <linux/mm.h>
 #include <asm/cacheflush.h>
 
-#include "../remoteproc_elf_helpers.h"
-#include "../remoteproc_internal.h"
+#include "remoteproc_elf_helpers.h"
+#include "remoteproc_internal.h"
 
 #if defined(CONFIG_ARM64)
 #include <linux/io.h>

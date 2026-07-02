@@ -6,5 +6,6 @@ snps_accel_rproc-y := \
 		accel_rproc.o \
 		npx_config.o
 
+ccflags-y += -I$(srctree)/drivers/remoteproc
 ccflags-y += -DDEBUG
 
