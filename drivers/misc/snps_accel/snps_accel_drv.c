@@ -17,6 +17,7 @@
 #include <linux/of_iommu.h>
 #include <linux/iommu.h>
 #include <linux/device.h>
+#include <linux/version.h>
 
 #include <uapi/misc/snps_accel.h>
 #include "snps_accel_drv.h"
@@ -621,7 +622,11 @@ static int __init snps_accel_init(void)
 	int ret;
 	dev_t dev;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	snps_accel_class = class_create("snps-accel");
+#else
+	snps_accel_class = class_create(THIS_MODULE, "snps-accel");
+#endif
 	if (IS_ERR(snps_accel_class)) {
 		ret = PTR_ERR(snps_accel_class);
 		goto err_class;
