@@ -13,6 +13,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
+#include <linux/version.h>
 #include <asm/cacheflush.h>
 
 #include "remoteproc_elf_helpers.h"
@@ -557,7 +558,12 @@ static int snps_accel_rproc_probe(struct platform_device *pdev)
 	return 0;
 }
 
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+static void snps_accel_rproc_remove(struct platform_device *pdev)
+#else
 static int snps_accel_rproc_remove(struct platform_device *pdev)
+#endif
 {
 #if IS_ENABLED(CONFIG_SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
 	struct device *dev = &pdev->dev;
@@ -573,7 +579,9 @@ static int snps_accel_rproc_remove(struct platform_device *pdev)
 	}
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
 	return 0;
+#endif
 }
 
 static int
