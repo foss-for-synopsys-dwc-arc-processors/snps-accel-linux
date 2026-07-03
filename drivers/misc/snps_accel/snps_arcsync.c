@@ -1005,11 +1005,6 @@ static int arcsync_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int arcsync_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
 #ifdef CONFIG_OF
 static const struct of_device_id snps_arcsync_match[] = {
 	{ .compatible = "snps,arcsync" },
@@ -1020,7 +1015,6 @@ MODULE_DEVICE_TABLE(of, snps_arcsync_match);
 
 static struct platform_driver snps_arcsync_platform_driver = {
 	.probe = arcsync_probe,
-	.remove = arcsync_remove,
 	.driver = {
 		.name = "arcsync",
 		.of_match_table = of_match_ptr(snps_arcsync_match),
