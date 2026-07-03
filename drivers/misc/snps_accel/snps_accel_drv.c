@@ -780,10 +780,16 @@ static int snps_accel_probe(struct platform_device *pdev)
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+static void snps_accel_remove(struct platform_device *pdev)
+#else
 static int snps_accel_remove(struct platform_device *pdev)
+#endif
 {
 	snps_accel_release_devs(pdev);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
 	return 0;
+#endif
 }
 
 #ifdef CONFIG_OF
