@@ -10,3 +10,16 @@ config SNPS_ACCEL_RPROC
 
 	  This can be either built-in or a loadable module.
 
+config SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS
+    bool "Enable IOMMU bypass for CBU access in rproc driver"
+    depends on SNPS_ACCEL_RPROC
+    depends on IOMMU_API
+    default n
+    help
+      Enable a special IOMMU configuration that bypasses IOMMU
+      translation for scalar accesses from ARC CPUs of NPX/VPX
+      devices to system RAM through the CBU bus.
+
+      This option is intended for the Xilinx Zynq development
+      platform. Unless your platform requires this workaround,
+      say N.

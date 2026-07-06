@@ -26,10 +26,8 @@
 #include <linux/cache.h>
 #endif
 
-#if IS_ENABLED(CONFIG_IOMMU_API)
+#if IS_ENABLED(CONFIG_SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
 #include <linux/iommu.h>
-/* Enable ARC CBU IOMMU bypass so that IOVA equals physical address */
-#define SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS
 #endif
 
 #include "accel_rproc.h"
@@ -518,7 +516,7 @@ static int snps_accel_rproc_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-#if IS_ENABLED(CONFIG_IOMMU_API) && defined(SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
+#if IS_ENABLED(CONFIG_SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
 	struct iommu_group *group = iommu_group_get(dev);
 	if (group) {
 		/* Allocate a new domain */
@@ -553,7 +551,7 @@ static int snps_accel_rproc_probe(struct platform_device *pdev)
 
 static int snps_accel_rproc_remove(struct platform_device *pdev)
 {
-#if IS_ENABLED(CONFIG_IOMMU_API) && defined(SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
+#if IS_ENABLED(CONFIG_SNPS_ACCEL_RPROC_CBU_IOMMU_BYPASS)
 	struct device *dev = &pdev->dev;
 	struct iommu_group *group = iommu_group_get(dev);
 	if (group) {
