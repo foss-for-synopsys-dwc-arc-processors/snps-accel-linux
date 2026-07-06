@@ -56,12 +56,12 @@ static int snps_accel_rproc_prepare(struct rproc *rproc)
 	return 0;
 }
 
-#if defined(CONFIG_ARM64) && defined (KBUILD_EXTMOD)
-static inline void dcache_clean_inval(void *addr, size_t size)
+#if defined(CONFIG_ARM64) && defined(MODULE)
+static inline void dcache_clean_inval(unsigned long addr, size_t size)
 {
 	unsigned long line_size = cache_line_size();
-	uintptr_t start = (uintptr_t)addr & ~(line_size - 1);
-	uintptr_t end = (uintptr_t)addr + size;
+	uintptr_t start = addr & ~(line_size - 1);
+	uintptr_t end = addr + size;
 
 	asm volatile(
 		"1:\n"
@@ -93,7 +93,7 @@ static int snps_accel_rproc_start(struct rproc *rproc)
 		end = start + mem[i].size;
 
 		if (mem[i].is_ram == REGION_INTERSECTS)
-#if defined (KBUILD_EXTMOD)
+#if defined(MODULE)
 			dcache_clean_inval(start, end - start);
 #else
 			dcache_clean_inval_poc(start, end);
