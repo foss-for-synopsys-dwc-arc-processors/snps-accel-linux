@@ -11,6 +11,7 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/of_device.h>
 #include <linux/of_irq.h>
 #if IS_ENABLED(CONFIG_OF_IOMMU)
 #include <linux/of_iommu.h>
@@ -431,6 +432,9 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 		goto err_dev_create;
 	}
 
+	accel_app->device->bus = pdev->dev.bus;
+	accel_app->device->of_node = node;
+
 	accel_app->device->dma_mask = pdev->dev.dma_mask;
 	ret = of_property_read_u32(node, "snps,dma-bits", &dma_bits);
 	if (ret) {
@@ -462,18 +466,15 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 		dev_dbg(accel_app->device, "shmem pgprot 0x%x\n", accel_app->pgprot_bits);
 	}
 
-#if IS_ENABLED(CONFIG_OF_IOMMU)
-	accel_app->device->bus = pdev->dev.bus;
-	accel_app->device->of_node = node;
-	if (IS_ERR_OR_NULL(of_iommu_configure(accel_app->device, node, NULL))) {
-		dev_warn(accel_app->device, "failed to configure IOMMU\n");
-	}
-	else {
-		if (accel_app->device->dma_ops == NULL && accel_app->device->dma_mask) {
-			iommu_setup_dma_ops(accel_app->device, 0, *accel_app->device->dma_mask);
-		}
-	}
-#endif
+	/*
+	 * The app devices are not proper OF platform devices. Apply the DMA
+	 * configuration explicitly.
+	 */
+	ret = of_dma_configure(accel_app->device, node, true);
+	if (ret < 0)
+		dev_warn(accel_app->device, "Failed to configure DMA/IOMMU (err: %d)\n", ret);
+	else
+		dev_info(accel_app->device, "IOMMU/DMA configured successfully\n");
 
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
