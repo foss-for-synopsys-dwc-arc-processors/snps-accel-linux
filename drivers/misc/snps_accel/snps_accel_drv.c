@@ -355,6 +355,15 @@ snps_accel_get_ctrl_mem(struct device_node *node, struct resource *ctrl)
 	return 0;
 }
 
+static inline int snps_accel_dma_configure(struct device *dev, struct device_node *np)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+	return of_dma_configure_id(dev, np, true, NULL);
+#else
+	return of_dma_configure(dev, np, true);
+#endif
+}
+
 static void snps_accel_memdev_release(struct device *dev)
 {
 	kfree(dev);
@@ -382,7 +391,7 @@ static struct device *snps_accel_alloc_mem_device(struct device *parent, int idx
 		return NULL;
 	}
 
-	ret = of_dma_configure(child, parent->of_node, true);
+	ret = snps_accel_dma_configure(child, parent->of_node);
 	if (ret) {
 		device_unregister(child);
 		return NULL;
@@ -643,7 +652,7 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	 * The app devices are not proper OF platform devices. Apply the DMA
 	 * configuration explicitly.
 	 */
-	ret = of_dma_configure(accel_app->device, node, true);
+	ret = snps_accel_dma_configure(accel_app->device, node);
 	if (ret < 0)
 		dev_warn(accel_app->device, "Failed to configure DMA/IOMMU (err: %d)\n", ret);
 	else
