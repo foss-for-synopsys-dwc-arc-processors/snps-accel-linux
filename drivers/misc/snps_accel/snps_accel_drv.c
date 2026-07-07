@@ -13,6 +13,7 @@
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
+#include <linux/of_reserved_mem.h>
 #if IS_ENABLED(CONFIG_OF_IOMMU)
 #include <linux/of_iommu.h>
 #endif
@@ -476,6 +477,10 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 		dev_warn(accel_app->device, "Failed to configure DMA/IOMMU (err: %d)\n", ret);
 	else
 		dev_info(accel_app->device, "IOMMU/DMA configured successfully\n");
+
+	ret = of_reserved_mem_device_init(accel_app->device);
+	if (ret != 0)
+		dev_warn(accel_app->device, "Reserved memory region is not found\n");
 
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
