@@ -56,6 +56,8 @@ struct snps_accel_app {
 	resource_size_t ctrl_base;
 	resource_size_t ctrl_size;
 	u32 pgprot_bits;
+	u32 num_mem_regions;
+	struct snps_accel_mem_region mem_regions[SNPS_ACCEL_MAX_MEM_REGIONS];
 };
 
 /**

@@ -10,31 +10,97 @@
 #include <uapi/misc/snps_accel.h>
 #include "snps_accel_drv.h"
 
+static bool snps_accel_page_in_region(const struct snps_accel_mem_region *region,
+				      struct page *page, size_t size)
+{
+	phys_addr_t pa = page_to_phys(page);
+
+	if (!region->size)
+		return true;
+
+	return pa >= region->base &&
+	       pa + size <= region->base + region->size;
+}
+
 static struct snps_accel_mem_buffer *
-snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size, 
+snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 		      enum dma_data_direction dma_dir)
 {
 	struct page *page;
 	struct snps_accel_mem_buffer *mbuf = NULL;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
-	struct device *dmabuf_dev = mem->dev;
+	struct device *dmabuf_dev;
+	size_t aligned_size = PAGE_ALIGN(size);
 
 	mbuf = kzalloc(sizeof(*mbuf), GFP_KERNEL);
 	if (!mbuf)
 		return NULL;
 
-	/* Allocate buffer in direct memory */
-	page = dma_alloc_pages(dmabuf_dev, PAGE_ALIGN(size), &mbuf->da,
-				dma_dir, GFP_KERNEL | __GFP_NOWARN);
-	if (!page) {
-		dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
-		return NULL;
+	if (mem->num_regions <= 1) {
+		dmabuf_dev = mem->dev;
+
+		page = dma_alloc_pages(dmabuf_dev, aligned_size, &mbuf->da,
+				       dma_dir, GFP_KERNEL | __GFP_NOWARN);
+		if (!page) {
+			dev_err(mem->dev, "Failed to allocate contiguous memory for buffer\n");
+			kfree(mbuf);
+			return NULL;
+		}
+	} else {
+		/* Try each region in order until allocation succeeds */
+		int i;
+
+		page = NULL;
+
+		for (i = 0; i < mem->num_regions && !page; i++) {
+			dmabuf_dev = mem->regions[i].dev;
+
+			page = dma_alloc_pages(dmabuf_dev, aligned_size, &mbuf->da,
+					       dma_dir, GFP_KERNEL | __GFP_NOWARN);
+
+			/*
+			 * Check that an allocated block lies within the reserved region
+			 * it was requested from. On CMA (shared-dma-pool) exhaustion
+			 * dma_alloc_pages() silently falls back to the buddy allocator.
+			 * Detect this condition and move on to the next region instead.
+			 */
+			if (page &&
+			    !snps_accel_page_in_region(&mem->regions[i], page,
+						       aligned_size)) {
+				dev_dbg(mem->dev,
+					"Region %u fell back to non-reserved memory\n",
+					i);
+				dma_free_pages(dmabuf_dev, aligned_size, page,
+					       mbuf->da, dma_dir);
+				page = NULL;
+			}
+
+			if (page) {
+				if (i > 0)
+					dev_dbg(mem->dev,
+						"Allocated %zu bytes from region %d (fallback)\n",
+						aligned_size, i);
+			} else if (i < mem->num_regions - 1) {
+				dev_dbg(mem->dev,
+					"Region %d failed for %zu bytes, trying next\n",
+					i, aligned_size);
+			}
+		}
+
+		if (!page) {
+			dev_err(mem->dev,
+				"Failed to allocate %zu bytes after trying %d regions\n",
+				aligned_size, mem->num_regions);
+			kfree(mbuf);
+			return NULL;
+		}
 	}
+
 	mbuf->ctx = mem;
 	mbuf->dev = dmabuf_dev;
 	mbuf->va = page_address(page);
 	mbuf->pa =  page_to_pfn(page) << PAGE_SHIFT;
-	mbuf->size = PAGE_ALIGN(size);
+	mbuf->size = aligned_size;
 	mbuf->dma_dir = dma_dir;
 
 	mutex_init(&mbuf->lock);
@@ -124,7 +190,7 @@ static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
 	return 0;
 }
 
-static void 
+static void
 snps_accel_dmabuf_detach_device(struct snps_accel_mem_buffer *mbuf)
 {
 	if (mbuf->dmasgt)
@@ -284,6 +350,26 @@ void snps_accel_app_mem_init(struct device *dev, struct snps_accel_mem_ctx *mem)
 	mem->dev = dev;
 	mutex_init(&mem->list_lock);
 	INIT_LIST_HEAD(&mem->mlist);
+	mem->num_regions = 0;
+}
+
+void snps_accel_app_mem_init_regions(struct snps_accel_mem_ctx *mem,
+				     struct snps_accel_mem_region *regions,
+				     u32 num_regions)
+{
+	int i;
+
+	if (num_regions > SNPS_ACCEL_MAX_MEM_REGIONS) {
+		dev_warn(mem->dev, "Too many regions %d, limiting to %d\n",
+			 num_regions, SNPS_ACCEL_MAX_MEM_REGIONS);
+		num_regions = SNPS_ACCEL_MAX_MEM_REGIONS;
+	}
+
+	for (i = 0; i < num_regions; i++)
+		mem->regions[i] = regions[i];
+	mem->num_regions = num_regions;
+
+	dev_dbg(mem->dev, "Initialized memory context with %d region(s)\n", num_regions);
 }
 
 void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem)
