@@ -3,20 +3,20 @@
  * Copyright (C) 2023-2025 Synopsys, Inc. (www.synopsys.com)
  */
 
+#include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/fs.h>
-#include <linux/mm.h>
 #include <linux/init.h>
+#include <linux/iommu.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#if IS_ENABLED(CONFIG_OF_IOMMU)
+#include <linux/of_iommu.h>
+#endif
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-
-#include <linux/of.h>
-#include <linux/of_iommu.h>
-#include <linux/iommu.h>
-#include <linux/device.h>
 #include <linux/version.h>
 
 #include <uapi/misc/snps_accel.h>
