@@ -147,11 +147,7 @@ static int
 snps_accel_dmabuf_op_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 {
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
-	size_t size = vma->vm_end - vma->vm_start;
 	int ret = 0;
-
-	if (PAGE_ALIGN(size) != mbuf->size)
-		return -EINVAL;
 
 	ret = dma_mmap_pages(mbuf->dev, vma, mbuf->size, virt_to_page(mbuf->va));
 	if (ret)
