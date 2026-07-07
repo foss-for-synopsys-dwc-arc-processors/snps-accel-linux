@@ -212,6 +212,12 @@ static int snps_accel_open(struct inode *inode, struct file *filp)
 	fpriv->app = accel_app;
 	snps_accel_app_mem_init(accel_app->device, &fpriv->mem);
 
+	if (accel_app->num_mem_regions > 0) {
+		snps_accel_app_mem_init_regions(&fpriv->mem,
+						accel_app->mem_regions,
+						accel_app->num_mem_regions);
+	}
+
 	fpriv->handled_irq_event = atomic_read(&accel_app->irq_event);
 	filp->private_data = fpriv;
 
@@ -333,10 +339,158 @@ snps_accel_get_ctrl_mem(struct device_node *node, struct resource *ctrl)
 
 	/* Get control unit registers base address */
 	ret = of_address_to_resource(np, 0, ctrl);
+	of_node_put(np);
 	if (ret < 0)
 		return ret;
 
 	return 0;
+}
+
+static void snps_accel_memdev_release(struct device *dev)
+{
+	kfree(dev);
+}
+
+static struct device *snps_accel_alloc_mem_device(struct device *parent, int idx)
+{
+	struct device *child;
+	int ret;
+
+	child = kzalloc(sizeof(*child), GFP_KERNEL);
+	if (!child)
+		return NULL;
+
+	device_initialize(child);
+	dev_set_name(child, "%s:mem%d", dev_name(parent), idx);
+	child->parent = parent;
+	child->coherent_dma_mask = parent->coherent_dma_mask;
+	child->dma_mask = &child->coherent_dma_mask;
+	child->release = snps_accel_memdev_release;
+
+	ret = device_add(child);
+	if (ret) {
+		put_device(child);
+		return NULL;
+	}
+
+	ret = of_dma_configure(child, parent->of_node, true);
+	if (ret) {
+		device_unregister(child);
+		return NULL;
+	}
+
+	return child;
+}
+
+static int snps_accel_init_mem_regions(struct snps_accel_app *accel_app,
+				       struct device_node *node)
+{
+	struct device *parent_dev = accel_app->device;
+	int num_regions, i, ret;
+
+	num_regions = of_count_phandle_with_args(node, "memory-region", NULL);
+	if (num_regions <= 0) {
+		dev_dbg(parent_dev, "No memory-region specified, using device default\n");
+		accel_app->num_mem_regions = 0;
+		return 0;
+	}
+
+	if (num_regions == 1) {
+		ret = of_reserved_mem_device_init_by_idx(parent_dev, node, 0);
+		if (ret) {
+			dev_warn(parent_dev,
+				 "Failed to bind reserved region to app device (%d)\n",
+				 ret);
+			accel_app->num_mem_regions = 0;
+		} else {
+			dev_info(parent_dev,
+				 "Reserved memory region bound to app device\n");
+			accel_app->num_mem_regions = 1;
+		}
+
+		return 0;
+	}
+
+	if (num_regions > SNPS_ACCEL_MAX_MEM_REGIONS) {
+		dev_warn(parent_dev, "Too many memory regions (%d), using first %d\n",
+			 num_regions, SNPS_ACCEL_MAX_MEM_REGIONS);
+		num_regions = SNPS_ACCEL_MAX_MEM_REGIONS;
+	}
+
+	for (i = 0; i < num_regions; i++) {
+		struct device *child;
+		struct device_node *mem_node;
+		u64 base = 0;
+		u64 size = 0;
+
+		/* Create child device */
+		child = snps_accel_alloc_mem_device(parent_dev, i);
+		if (!child) {
+			dev_err(parent_dev, "Failed to allocate mem device %d\n", i);
+			ret = -ENOMEM;
+			goto err_cleanup;
+		}
+
+		ret = of_reserved_mem_device_init_by_idx(child, node, i);
+		if (ret) {
+			dev_err(parent_dev, "Failed to init reserved mem for region %d: %d\n",
+				i, ret);
+			device_unregister(child);
+			goto err_cleanup;
+		}
+
+		mem_node = of_parse_phandle(node, "memory-region", i);
+		if (mem_node) {
+			struct reserved_mem *rmem = of_reserved_mem_lookup(mem_node);
+
+			if (rmem) {
+				base = rmem->base;
+				size = rmem->size;
+			}
+			of_node_put(mem_node);
+		}
+
+		if (!size)
+			dev_warn(parent_dev, "Region %d range unknown, confinement disabled\n", i);
+
+		accel_app->mem_regions[i].dev = child;
+		accel_app->mem_regions[i].base = base;
+		accel_app->mem_regions[i].size = size;
+
+		dev_info(parent_dev, "Memory region %d: device %s, base 0x%llx size %llu bytes (0x%llx)\n",
+			 i, dev_name(child), base, size, size);
+	}
+
+	accel_app->num_mem_regions = num_regions;
+	return 0;
+
+err_cleanup:
+	while (--i >= 0) {
+		of_reserved_mem_device_release(accel_app->mem_regions[i].dev);
+		device_unregister(accel_app->mem_regions[i].dev);
+	}
+	accel_app->num_mem_regions = 0;
+	return ret;
+}
+
+static void snps_accel_release_mem_regions(struct snps_accel_app *accel_app)
+{
+	u32 i;
+
+	if (accel_app->num_mem_regions == 1) {
+		of_reserved_mem_device_release(accel_app->device);
+		accel_app->num_mem_regions = 0;
+		return;
+	}
+
+	for (i = 0; i < accel_app->num_mem_regions; i++) {
+		if (accel_app->mem_regions[i].dev) {
+			of_reserved_mem_device_release(accel_app->mem_regions[i].dev);
+			device_unregister(accel_app->mem_regions[i].dev);
+			accel_app->mem_regions[i].dev = NULL;
+		}
+	}
+	accel_app->num_mem_regions = 0;
 }
 
 static irqreturn_t snps_accel_app_irq_callback(int irq, void *dev)
@@ -477,9 +631,11 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	else
 		dev_info(accel_app->device, "IOMMU/DMA configured successfully\n");
 
-	ret = of_reserved_mem_device_init(accel_app->device);
-	if (ret != 0)
-		dev_warn(accel_app->device, "Reserved memory region is not found\n");
+	ret = snps_accel_init_mem_regions(accel_app, node);
+	if (ret) {
+		dev_err(accel_app->device, "Failed to initialize memory regions: %d\n", ret);
+		goto err_app_dev_init;
+	}
 
 	/* Add interrupt callback for ARCSync interrupt */
 	accel_app->irq_num = of_irq_get(node, 0);
@@ -550,6 +706,7 @@ static void snps_accel_release_app(struct snps_accel_app *accel_app)
 		fn->remove_interrupt_callback(accel_app->ctrl.dev,
 					      accel_app->irq_num, accel_app);
 
+	snps_accel_release_mem_regions(accel_app);
 	device_destroy(snps_accel_class, accel_app->devt);
 	cdev_del(&accel_app->cdev);
 }
