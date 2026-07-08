@@ -69,8 +69,8 @@ snps_accel_wait_irq(struct snps_accel_file_priv *fpriv, char __user *argp)
 	struct snps_accel_app *accel_app = fpriv->app;
 	struct snps_accel_wait_irq data;
 	int ret = 0;
-	u32 event_count = 0;
-	DECLARE_WAITQUEUE(wait, current);
+	long tret;
+	u32 event_count;
 
 	if (!accel_app || !accel_app->ctrl.dev || accel_app->irq_num < 0)
 		return -EIO;
@@ -79,23 +79,20 @@ snps_accel_wait_irq(struct snps_accel_file_priv *fpriv, char __user *argp)
 			  sizeof(struct snps_accel_wait_irq)))
 		return -EFAULT;
 
-	add_wait_queue(&accel_app->wait, &wait);
-	event_count = atomic_read(&accel_app->irq_event);
-	if (data.timeout == 0)
-		goto done_wirq;
-
-	if (fpriv->handled_irq_event != event_count)
-		goto done_wirq;
-
-	set_current_state(TASK_INTERRUPTIBLE);
-	if (schedule_timeout(msecs_to_jiffies(data.timeout)) == 0)
-		ret = -ETIMEDOUT;
-
-	__set_current_state(TASK_RUNNING);
 	event_count = atomic_read(&accel_app->irq_event);
 
-done_wirq:
-	remove_wait_queue(&accel_app->wait, &wait);
+	if (data.timeout != 0 && fpriv->handled_irq_event == event_count) {
+		tret = wait_event_interruptible_timeout(accel_app->wait,
+				atomic_read(&accel_app->irq_event) != fpriv->handled_irq_event,
+				msecs_to_jiffies(data.timeout));
+		/* Let the syscall be restarted/interrupted on a signal */
+		if (tret < 0)
+			return tret;
+		if (tret == 0)
+			ret = -ETIMEDOUT;
+		event_count = atomic_read(&accel_app->irq_event);
+	}
+
 	fpriv->handled_irq_event = data.count = event_count;
 	if (copy_to_user((void __user *)argp, &data, sizeof(struct snps_accel_wait_irq)))
 		return -EFAULT;
