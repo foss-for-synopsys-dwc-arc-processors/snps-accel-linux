@@ -699,7 +699,7 @@ arcsync_remove_interrupt_callback(struct device *dev, u32 irq,
 				  void *data)
 {
 	struct arcsync_interrupt *intr;
-	struct arcsync_callback *cb;
+	struct arcsync_callback *cb, *tmp;
 	struct arcsync_callback *remove_cb = NULL;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 
@@ -708,7 +708,7 @@ arcsync_remove_interrupt_callback(struct device *dev, u32 irq,
 		return -EINVAL;
 
 	spin_lock_irq(&intr->callbacks_list_lock);
-	list_for_each_entry(cb, &intr->callbacks_list, link) {
+	list_for_each_entry_safe(cb, tmp, &intr->callbacks_list, link) {
 		if (cb->data == data) {
 			list_del(&cb->link);
 			remove_cb = cb;
@@ -717,8 +717,7 @@ arcsync_remove_interrupt_callback(struct device *dev, u32 irq,
 	}
 	spin_unlock_irq(&intr->callbacks_list_lock);
 
-	if (remove_cb)
-		kfree(cb);
+	kfree(remove_cb);
 
 	return 0;
 }
