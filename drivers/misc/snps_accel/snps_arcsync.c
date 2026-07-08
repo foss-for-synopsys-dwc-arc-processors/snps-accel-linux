@@ -899,8 +899,12 @@ static int arcsync_probe(struct platform_device *pdev)
 	arcsync->dev = &pdev->dev;
 
 	ret = platform_irq_count(pdev);
-	if (!ret)
+	if (!ret) {
 		dev_warn(&pdev->dev, "No IRQ specified, continue without IRQ handler\n");
+	} else if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to count IRQs: %d\n", ret);
+		return ret;
+	}
 
 	if (ret <= ARCSYNC_HOST_MAX_IRQS) {
 		arcsync->num_irqs = ret;
