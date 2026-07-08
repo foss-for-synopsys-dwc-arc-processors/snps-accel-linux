@@ -996,7 +996,7 @@ static int arcsync_probe(struct platform_device *pdev)
 
 		ret = devm_request_irq(arcsync->dev, arcsync->irq[i].irqnum,
 				       arcsync_interrupt,
-				       IRQF_SHARED,
+				       0,
 				       arcsync->irq[i].name,
 				       &arcsync->irq[i]);
 		if (ret) {
