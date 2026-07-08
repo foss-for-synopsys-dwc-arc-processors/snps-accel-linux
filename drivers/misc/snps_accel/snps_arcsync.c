@@ -844,10 +844,16 @@ static irqreturn_t arcsync_interrupt(int irq, void *idata)
 	struct arcsync_interrupt *irq_data = (struct arcsync_interrupt *)idata;
 	struct arcsync_device *arcsync = irq_data->arcsync;
 	struct arcsync_callback *cb;
+	u32 offs;
+	u32 val;
 
 	/* Ack interrupt */
-	writel(arcsync->host_coreid,
-	       arcsync->regs + ARCSYNC2_EID_ACK_IRQ(arcsync->host_coreid, irq_data->idx));
+	offs = ARCSYNC2_EID_ACK_IRQ(arcsync->host_coreid, irq_data->idx);
+	val = readl(arcsync->regs + offs);
+	if (!val)
+		return IRQ_HANDLED;
+
+	writel(arcsync->host_coreid, arcsync->regs + offs);
 
 	/* Use this interrupt as a doorbell for application drivers. We can't
 	 * determine what firmware app generated an IRQ,
