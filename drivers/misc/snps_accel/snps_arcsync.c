@@ -13,6 +13,7 @@
 #include <linux/log2.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/of_device.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -37,6 +38,14 @@
 #define ARCSYNC_BLD_VERSION_MASK	0xFF
 #define ARCSYNC_BLD_CUSTERS_NUM(bcr)	((((bcr) >> 8) & 0xFF) + 1)
 #define ARCSYNC_BLD_CORES_PER_CL(bcr)	(4 << (((bcr) >> 16) & 0x7))
+
+#define ARCSYNC_BLD_AC_BITS(bcr)	(((bcr) >> 19) & 0x7)
+#define ARCSYNC_BLD_AC_NUM(bcr)					\
+({								\
+	u32 __ac = ARCSYNC_BLD_AC_BITS(bcr);			\
+	__ac ? 16U << __ac : 0U;				\
+})
+
 #define ARCSYNC_BLD_HAS_PMU		(1 << 22)
 
 /* ARCsync v1 definitions */
@@ -123,7 +132,30 @@
 					 ARCSYNC_MAX_COREID * (0x14 + (idx) * 8) + \
 					 (coreid) * 4)
 
-#define ARCSYNC_HOST_COREID_DEF		0x20
+#define ARCSYNC2_AC_NUM			arcsync->ac_num
+#define ARCSYNC2_AC_CONTROL		0x9000
+#define ARCSYNC2_AC_SIZE		(4 * ARCSYNC_MAX_COREID * ARCSYNC2_AC_NUM)
+#define ARCSYNC2_AC_SIZE_ALIGNED	ALIGN(ARCSYNC2_AC_SIZE, 4096)
+
+#define ARCSYNC2_VM_MAP_SIZE		0x1000
+#define ARCSYNC2_VM_BASE_OFFSET		(ARCSYNC2_AC_CONTROL + \
+					 ARCSYNC2_AC_SIZE_ALIGNED + \
+					 ARCSYNC2_VM_MAP_SIZE)
+#define ARCSYNC2_VM_SIZE		0x1000
+
+#define ARCSYNC2_VM_EID_RAISE_IRQ_0(vm, vp) \
+					(ARCSYNC2_VM_BASE_OFFSET + \
+					 (vm) * ARCSYNC2_VM_SIZE + \
+					 16 * ARCSYNC_NUM_CLUSTERS + \
+					 (vp) * 4)
+
+#define ARCSYNC2_VM_EID_ACK_IRQ_0(vm, vp) \
+					(ARCSYNC2_VM_BASE_OFFSET + \
+					 (vm) * ARCSYNC2_VM_SIZE + \
+					 20 * ARCSYNC_NUM_CLUSTERS + \
+					 (vp) * 4)
+
+#define ARCSYNC_DEF_HOST_CLUSTER_ID	0x2
 
 struct arcsync_device;
 
@@ -164,9 +196,11 @@ struct arcsync_interrupt {
  * @corenum_width: width of corenum field in bits to count core id
  * @has_pmu: PMU presence flag
  * @clusters_num: number of clusters controlled by ARCsync
+ * @ac_num: number of ARCSync atomic counters
  * @cores_max: number of cores controlled by ARCsync
- * @host_coreid: host CPU core id as it seen by the ARCSync
+ * @host_id: host CPU id as it seen by the ARCSync
  * @vdk_fix: use of VDK fix flag
+ * @virt_irq: use virtualized (per-VM) interrupt ack path
  * @lock: lock for access to the ARCScyn MMIO
  * @num_irqs: number of ARCSync interrupts to handle
  * @irq: array of ARCsync host IRQs for notifications
@@ -180,13 +214,23 @@ struct arcsync_device {
 	u32 has_pmu;
 	u32 clusters_num;
 	u32 cores_max;
-	u32 host_coreid;
+	u32 ac_num;
+	u32 host_id;
 	u32 vdk_fix;
+	bool virt_irq;
 	u32 arcnet_id;
 	struct mutex lock;
 	u32 num_irqs;
 	struct arcsync_interrupt irq[ARCSYNC_HOST_MAX_IRQS];
 	const struct arcsync_funcs *funcs;
+};
+
+/**
+ * struct arcsync_dev_data - per-compatible configuration from the match table
+ * @virt_irq: device uses the virtualized (per-VM) interrupts
+ */
+struct arcsync_dev_data {
+	bool virt_irq;
 };
 
 static struct platform_driver snps_arcsync_platform_driver;
@@ -765,6 +809,14 @@ static int arcsync_get_cores_per_cluster(struct arcsync_device *arcsync)
 	return cores;
 }
 
+static int arcsync_get_ac_num(struct arcsync_device *arcsync)
+{
+	u32 bcr;
+
+	bcr = readl(arcsync->regs + ARCSYNC_BLD_CFG);
+	return ARCSYNC_BLD_AC_NUM(bcr);
+}
+
 static int arcsync_read_version(struct arcsync_device *arcsync)
 {
 	return readl(arcsync->regs + ARCSYNC_BLD_CFG) & ARCSYNC_BLD_VERSION_MASK;
@@ -847,13 +899,23 @@ static irqreturn_t arcsync_interrupt(int irq, void *idata)
 	u32 offs;
 	u32 val;
 
+	if (irq != irq_data->irqnum) {
+		dev_err(arcsync->dev, "Received IRQ %d (idx %u), expected %u\n",
+			irq, irq_data->idx, irq_data->irqnum);
+		return IRQ_NONE;
+	}
+
 	/* Ack interrupt */
-	offs = ARCSYNC2_EID_ACK_IRQ(arcsync->host_coreid, irq_data->idx);
+	if (arcsync->virt_irq)
+		offs = ARCSYNC2_VM_EID_ACK_IRQ_0(irq_data->idx, arcsync->host_id);
+	else
+		offs = ARCSYNC2_EID_ACK_IRQ(arcsync->host_id, irq_data->idx);
+
 	val = readl(arcsync->regs + offs);
 	if (!val)
 		return IRQ_HANDLED;
 
-	writel(arcsync->host_coreid, arcsync->regs + offs);
+	writel(arcsync->host_id, arcsync->regs + offs);
 
 	/* Use this interrupt as a doorbell for application drivers. We can't
 	 * determine what firmware app generated an IRQ,
@@ -888,6 +950,7 @@ static u32 arc_read_host_clusterid(void)
 
 static int arcsync_probe(struct platform_device *pdev)
 {
+	const struct arcsync_dev_data *arcsync_data;
 	struct arcsync_device *arcsync;
 	struct resource *res;
 	struct device_node *node = pdev->dev.of_node;
@@ -902,6 +965,10 @@ static int arcsync_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	arcsync->dev = &pdev->dev;
+
+	arcsync_data = of_device_get_match_data(&pdev->dev);
+	if (arcsync_data && arcsync_data->virt_irq)
+		arcsync->virt_irq = true;
 
 	ret = platform_irq_count(pdev);
 	if (!ret) {
@@ -948,29 +1015,37 @@ static int arcsync_probe(struct platform_device *pdev)
 	arcsync->funcs = &arcsync_ctrl;
 	arcsync->has_pmu = arcsync_read_has_pmu(arcsync);
 	arcsync->version = arcsync_read_version(arcsync);
+	if (arcsync->version < 2) {
+		arcsync->virt_irq = false;
+		dev_warn(&pdev->dev, "ARCSync v1 does not support virtualization\n");
+	}
 
 	arcsync->clusters_num = arcsync_get_clusters_num(arcsync);
 	if (arcsync->vdk_fix)
 		arcsync->clusters_num -= 1;
 	cores_per_cluster = arcsync_get_cores_per_cluster(arcsync);
 	arcsync->cores_max = arcsync->clusters_num * cores_per_cluster;
+	if (arcsync->version > 1)
+		arcsync->ac_num = arcsync_get_ac_num(arcsync);
 
 	arcsync->corenum_width = ilog2(cores_per_cluster);
 
 	if (!of_property_read_u32(node, "snps,host-cluster-id", &hcluster_id)) {
 		of_property_read_u32(node, "snps,host-core-id", &hcore_id);
-		arcsync->host_coreid = arcsync_build_coreid(hcluster_id, hcore_id,
-							    arcsync->corenum_width);
 	} else {
 #ifdef CONFIG_ISA_ARCV2
-		hcore_id = arc_read_host_coreid();
 		hcluster_id = arc_read_host_clusterid();
-		arcsync->host_coreid = arcsync_build_coreid(hcluster_id, hcore_id,
-							    arcsync->corenum_width);
+		hcore_id = arc_read_host_coreid();
 #else
-		arcsync->host_coreid = ARCSYNC_HOST_COREID_DEF;
+		hcluster_id = ARCSYNC_DEF_HOST_CLUSTER_ID;
 #endif
 	}
+	if (arcsync->virt_irq)
+		arcsync->host_id = hcluster_id;
+	else
+		arcsync->host_id = arcsync_build_coreid(hcluster_id, hcore_id,
+							arcsync->corenum_width);
+
 	of_property_read_u32(node, "snps,arcnet-id", &arcsync->arcnet_id);
 
 	dev_dbg(&pdev->dev, "ARCsync registers addr %pap (mapped %pS)\n",
@@ -979,10 +1054,11 @@ static int arcsync_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "ARCnet id 0x%x\n", arcsync->arcnet_id);
 	dev_dbg(&pdev->dev, "Clusters num: %d\n", arcsync->clusters_num);
 	dev_dbg(&pdev->dev, "Cores num: %d\n", arcsync->cores_max);
-	dev_dbg(&pdev->dev, "Corenum width %d\n", arcsync->corenum_width);
+	dev_dbg(&pdev->dev, "Corenum width: %d\n", arcsync->corenum_width);
+	dev_dbg(&pdev->dev, "Atomic counters: %d\n", arcsync->ac_num);
 	dev_dbg(&pdev->dev, "PMU: %d\n", arcsync->has_pmu);
 	dev_dbg(&pdev->dev, "VDK fix: %d\n", arcsync->vdk_fix);
-	dev_dbg(&pdev->dev, "Host coreID 0x%x\n", arcsync->host_coreid);
+	dev_dbg(&pdev->dev, "Host ID 0x%x\n", arcsync->host_id);
 
 	platform_set_drvdata(pdev, arcsync);
 
@@ -1015,8 +1091,17 @@ static int arcsync_probe(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_OF
+static const struct arcsync_dev_data arcsync_phys_data = {
+	.virt_irq = false,
+};
+
+static const struct arcsync_dev_data arcsync_virt_data = {
+	.virt_irq = true,
+};
+
 static const struct of_device_id snps_arcsync_match[] = {
-	{ .compatible = "snps,arcsync" },
+	{ .compatible = "snps,arcsync-virt", .data = &arcsync_virt_data },
+	{ .compatible = "snps,arcsync", .data = &arcsync_phys_data },
 	{ /* Sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, snps_arcsync_match);
