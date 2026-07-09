@@ -13,7 +13,6 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
-#include <linux/mm.h>
 #include <asm/cacheflush.h>
 
 #include "remoteproc_elf_helpers.h"
@@ -92,7 +91,7 @@ static int snps_accel_rproc_start(struct rproc *rproc)
 		start = (unsigned long)mem[i].virt_addr;
 		end = start + mem[i].size;
 
-		if (mem[i].is_ram == REGION_INTERSECTS)
+		if (mem[i].needs_cache_flush)
 #if defined(MODULE)
 			dcache_clean_inval(start, end - start);
 #else
@@ -370,12 +369,21 @@ static int snps_accel_rproc_of_get_mem(struct platform_device *pdev,
 			return -EINVAL;
 		}
 
-		aproc->mem[i].is_ram = region_intersects(res->start, resource_size(res),
-								IORESOURCE_SYSTEM_RAM, IORES_DESC_NONE);
-		if (aproc->mem[i].is_ram == REGION_INTERSECTS)
-			flags = MEMREMAP_WB;
-		else
-			flags = MEMREMAP_WT;
+#if defined(CONFIG_ARM64)
+		 /*
+		  * Map cacheable so memcpy may work and flush before
+		  * the remote core starts.
+		  * */
+		flags = MEMREMAP_WB;
+		aproc->mem[i].needs_cache_flush = true;
+#else
+		/*
+		 * On ARC use WC explicitly to preserve the original
+		 * host coherency model (no dcache flush needed).
+		 */
+		flags = MEMREMAP_WC;
+		aproc->mem[i].needs_cache_flush = false;
+#endif
 
 		aproc->mem[i].virt_addr = devm_memremap(dev, res->start,
 							resource_size(res), flags);
