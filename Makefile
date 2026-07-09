@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
-ifeq ($(strip $(KERNEL_DIR)),)
-    $(error KERNEL_DIR is empty or not set)
-endif
 
 KDIR ?= $(KERNEL_DIR)
 M := $(realpath $(CURDIR))
+
+ifeq ($(strip $(KDIR)),)
+	$(error KDIR is empty or not set)
+endif
 
 # Out-of-tree builds do not run this repo's Kconfig menu automatically.
 # Enable module configs by default, but allow users to override on command line.
