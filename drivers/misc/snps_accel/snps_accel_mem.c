@@ -118,7 +118,7 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 }
 
 static void
-snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem, 
+snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem,
 		     struct snps_accel_mem_buffer *mbuf,
 		     enum dma_data_direction dma_dir)
 {
@@ -406,10 +406,14 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 							   u64 size, u32 dflags)
 {
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
-	struct snps_accel_mem_buffer *mbuf = NULL;
-	int fd;
+	struct snps_accel_mem_buffer *mbuf;
 	enum dma_data_direction dma_dir = snps_accel_app_dma_direction(dflags);
 
+	/*
+	 * Allocate backing memory and export it as a dma_buf. The caller is
+	 * responsible for installing the dma_buf into a file descriptor
+	 * (via get_unused_fd_flags() + fd_install() on mbuf->dmabuf->file).
+	 */
 	mbuf = snps_accel_mbuf_alloc(mem, size, dma_dir);
 	if (mbuf == NULL)
 		return NULL;
@@ -425,13 +429,6 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 		snps_accel_mbuf_free(mem, mbuf, dma_dir);
 		return NULL;
 	}
-
-	fd = dma_buf_fd(mbuf->dmabuf, O_ACCMODE | O_CLOEXEC);
-	if (fd < 0) {
-		dma_buf_put(mbuf->dmabuf);
-		return NULL;
-	}
-	mbuf->fd = fd;
 
 	return mbuf;
 }
@@ -506,7 +503,6 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 		goto err_notcontig;
 	}
 
-	mbuf->fd = fd;
 	mbuf->dmabuf = dmabuf;
 	mbuf->size = dmabuf->size;
 	mbuf->va = NULL;
