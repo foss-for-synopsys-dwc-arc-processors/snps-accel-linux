@@ -143,16 +143,16 @@
 					 ARCSYNC2_VM_MAP_SIZE)
 #define ARCSYNC2_VM_SIZE		0x1000
 
-#define ARCSYNC2_VM_EID_RAISE_IRQ_0(vm, vp) \
+#define ARCSYNC2_VM_EID_RAISE_IRQ(vm, irq, vp) \
 					(ARCSYNC2_VM_BASE_OFFSET + \
 					 (vm) * ARCSYNC2_VM_SIZE + \
-					 16 * ARCSYNC_NUM_CLUSTERS + \
+					 (16 + (irq) * 8) * ARCSYNC_NUM_CLUSTERS + \
 					 (vp) * 4)
 
-#define ARCSYNC2_VM_EID_ACK_IRQ_0(vm, vp) \
+#define ARCSYNC2_VM_EID_ACK_IRQ(vm, irq, vp) \
 					(ARCSYNC2_VM_BASE_OFFSET + \
 					 (vm) * ARCSYNC2_VM_SIZE + \
-					 20 * ARCSYNC_NUM_CLUSTERS + \
+					 (20 + (irq) * 8) * ARCSYNC_NUM_CLUSTERS + \
 					 (vp) * 4)
 
 #define ARCSYNC_DEF_HOST_CLUSTER_ID	0x2
@@ -176,6 +176,8 @@ struct arcsync_callback {
  * @arcsync - pointer to the arcsync device structure
  * @irqnum - described ARCSync interrupt number
  * @idx - ARCSync interrupt line index and index in the array of interrupt structs (0,1,2...)
+ * @vm_id - VM this interrupt belongs to (virtual IRQ mode only)
+ * @vm_irq_idx - interrupt index within the VM (virtual IRQ mode only)
  * @callbacks_list_lock - spinlock for the list of IRQ callbacks
  * @callbacks_list - the list of IRQ callbacks
  */
@@ -183,6 +185,8 @@ struct arcsync_interrupt {
 	struct arcsync_device *arcsync;
 	u32 irqnum;
 	u32 idx;
+	u32 vm_id;
+	u32 vm_irq_idx;
 	char name[32];
 	spinlock_t callbacks_list_lock;
 	struct list_head callbacks_list;
@@ -907,7 +911,9 @@ static irqreturn_t arcsync_interrupt(int irq, void *idata)
 
 	/* Ack interrupt */
 	if (arcsync->virt_irq)
-		offs = ARCSYNC2_VM_EID_ACK_IRQ_0(irq_data->idx, arcsync->host_id);
+		offs = ARCSYNC2_VM_EID_ACK_IRQ(irq_data->vm_id,
+					       irq_data->vm_irq_idx,
+					       arcsync->host_id);
 	else
 		offs = ARCSYNC2_EID_ACK_IRQ(arcsync->host_id, irq_data->idx);
 
@@ -957,6 +963,7 @@ static int arcsync_probe(struct platform_device *pdev)
 	u32 cores_per_cluster;
 	u32 hcluster_id = 0;
 	u32 hcore_id = 0;
+	u32 irqs_per_vm = 1;
 	int ret;
 	int i;
 
@@ -987,6 +994,22 @@ static int arcsync_probe(struct platform_device *pdev)
 		arcsync->num_irqs = ARCSYNC_HOST_MAX_IRQS;
 	}
 
+	/*
+	 * In virtual IRQ mode, map the linear DT interrupt index to a
+	 * (VM ID, IRQ index) pair. IRQs are grouped by VM, with the number
+	 * of IRQs per VM defined by "snps,irqs-per-vm" (default 1, the
+	 * one-IRQ-per-VM layout).
+	 */
+	if (arcsync->virt_irq) {
+		of_property_read_u32(node, "snps,irqs-per-vm", &irqs_per_vm);
+		if (irqs_per_vm == 0)
+			irqs_per_vm = 1;
+		if (arcsync->num_irqs % irqs_per_vm)
+			dev_warn(&pdev->dev,
+				 "IRQ count %u is not a multiple of irqs-per-vm %u\n",
+				 arcsync->num_irqs, irqs_per_vm);
+	}
+
 	for (i = 0; i < arcsync->num_irqs; i++) {
 		ret = platform_get_irq(pdev, i);
 		if (ret < 0) {
@@ -995,6 +1018,8 @@ static int arcsync_probe(struct platform_device *pdev)
 		}
 		arcsync->irq[i].irqnum = ret;
 		arcsync->irq[i].idx = i;
+		arcsync->irq[i].vm_id = i / irqs_per_vm;
+		arcsync->irq[i].vm_irq_idx = i % irqs_per_vm;
 		arcsync->irq[i].arcsync = arcsync;
 		spin_lock_init(&arcsync->irq[i].callbacks_list_lock);
 		INIT_LIST_HEAD(&arcsync->irq[i].callbacks_list);
