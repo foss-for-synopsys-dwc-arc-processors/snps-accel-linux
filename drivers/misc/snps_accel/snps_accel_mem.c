@@ -532,9 +532,10 @@ err_alloc:
 
 int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd)
 {
-	struct snps_accel_mem_buffer *mbuf;
+	struct snps_accel_mem_buffer *mbuf, *imported_mbuf = NULL;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
 	struct dma_buf *dmabuf;
+	bool found;
 
 	dmabuf = dma_buf_get(fd);
 	if (IS_ERR(dmabuf)) {
@@ -544,26 +545,24 @@ int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd)
 
 	mutex_lock(&mem->list_lock);
 	mbuf = snps_accel_dmabuf_find_by_dmabuf_locked(mem, dmabuf);
+	found = (mbuf != NULL);
+	if (mbuf && mbuf->imported) {
+		list_del(&mbuf->ctx_link);
+		imported_mbuf = mbuf;
+	}
 	mutex_unlock(&mem->list_lock);
 
 	dma_buf_put(dmabuf);
 
-	if (!mbuf) {
-		dev_err(mem->dev, "Failed to find imported dmabuf with fd %d\n", fd);
-		return -EINVAL;
-	}
-
-	/* This check allows to call detach safely for non-imported buffers */
-	if (mbuf->imported) {
-		snps_accel_dmabuf_detach_device(mbuf);
-
-		mutex_lock(&mem->list_lock);
-		list_del(&mbuf->ctx_link);
-		mutex_unlock(&mem->list_lock);
-
-		kfree(mbuf);
+	if (imported_mbuf) {
+		snps_accel_dmabuf_detach_device(imported_mbuf);
+		kfree(imported_mbuf);
 		snps_accel_file_priv_put(fpriv);
+		return 0;
 	}
 
-	return 0;
+	if (found)
+		dev_warn(mem->dev, "Detach on non-imported dmabuf fd %d\n", fd);
+
+	return -EINVAL;
 }
