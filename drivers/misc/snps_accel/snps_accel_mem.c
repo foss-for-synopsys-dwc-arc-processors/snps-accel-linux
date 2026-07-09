@@ -137,18 +137,16 @@ snps_accel_mbuf_free(struct snps_accel_mem_ctx *mem,
 }
 
 static struct snps_accel_mem_buffer *
-snps_accel_dmabuf_find_by_fd(struct snps_accel_mem_ctx *mem, int fd)
+snps_accel_dmabuf_find_by_dmabuf_locked(struct snps_accel_mem_ctx *mem,
+					struct dma_buf *dmabuf)
 {
-	struct snps_accel_mem_buffer *mbuf = NULL;
+	struct snps_accel_mem_buffer *mbuf;
 
-	mutex_lock(&mem->list_lock);
+	/* Caller must hold mem->list_lock */
 	list_for_each_entry(mbuf, &mem->mlist, ctx_link) {
-		if (mbuf->fd == fd) {
-			mutex_unlock(&mem->list_lock);
+		if (mbuf->dmabuf == dmabuf)
 			return mbuf;
-		}
 	}
-	mutex_unlock(&mem->list_lock);
 
 	return NULL;
 }
@@ -438,30 +436,34 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 	return mbuf;
 }
 
-int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem, struct snps_accel_dmabuf_info *info)
+int snps_accel_app_dmabuf_info(struct snps_accel_mem_ctx *mem,
+			       struct snps_accel_dmabuf_info *info)
 {
 	struct dma_buf *dmabuf;
 	struct snps_accel_mem_buffer *mbuf;
+	int ret = -EINVAL;
 
 	dmabuf = dma_buf_get(info->fd);
 	if (IS_ERR(dmabuf))
 		return -EINVAL;
 
-	mbuf = snps_accel_dmabuf_find_by_fd(mem, info->fd);
-	if (!mbuf) {
-		dev_err(mem->dev, "Failed to find dmabuf with fd %d\n", info->fd);
-		dma_buf_put(dmabuf);
-		return -EINVAL;
+	mutex_lock(&mem->list_lock);
+	mbuf = snps_accel_dmabuf_find_by_dmabuf_locked(mem, dmabuf);
+	if (mbuf) {
+		info->addr = mbuf->da;
+		info->size = mbuf->size;
+		dev_dbg(mbuf->dev,
+			"dmabuf info: fd %d, va/pa/da %px/%pa/%pad, size %zu\n",
+			info->fd, mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
+		ret = 0;
 	}
+	mutex_unlock(&mem->list_lock);
 
-	info->addr = mbuf->da;
-	info->size = mbuf->size;
-
-	dev_dbg(mbuf->dev, "dmabuf info: va/pa/da %px/%pa/%pad, size %zu\n",
-			mbuf->va, &mbuf->pa, &mbuf->da, mbuf->size);
+	if (ret)
+		dev_err(mem->dev, "Failed to find dmabuf with fd %d\n", info->fd);
 
 	dma_buf_put(dmabuf);
-	return 0;
+	return ret;
 }
 
 void snps_accel_app_dmabuf_release(struct snps_accel_mem_buffer *mbuf)
@@ -532,8 +534,20 @@ int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd)
 {
 	struct snps_accel_mem_buffer *mbuf;
 	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mem);
+	struct dma_buf *dmabuf;
 
-	mbuf = snps_accel_dmabuf_find_by_fd(mem, fd);
+	dmabuf = dma_buf_get(fd);
+	if (IS_ERR(dmabuf)) {
+		dev_err(mem->dev, "Failed to find imported dmabuf with fd %d\n", fd);
+		return -EINVAL;
+	}
+
+	mutex_lock(&mem->list_lock);
+	mbuf = snps_accel_dmabuf_find_by_dmabuf_locked(mem, dmabuf);
+	mutex_unlock(&mem->list_lock);
+
+	dma_buf_put(dmabuf);
+
 	if (!mbuf) {
 		dev_err(mem->dev, "Failed to find imported dmabuf with fd %d\n", fd);
 		return -EINVAL;
