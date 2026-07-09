@@ -485,7 +485,6 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 
 	mbuf = kzalloc(sizeof(*mbuf), GFP_KERNEL);
 	if (!mbuf) {
-		dma_buf_put(dmabuf);
 		ret = -ENOMEM;
 		goto err_alloc;
 	}
