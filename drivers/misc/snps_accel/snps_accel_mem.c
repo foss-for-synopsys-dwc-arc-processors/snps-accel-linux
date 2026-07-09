@@ -226,7 +226,6 @@ static int snps_accel_dmabuf_op_attach(struct dma_buf *dmabuf,
 {
 	struct snps_accel_dmabuf_attachment *dba;
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
-	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mbuf->ctx);
 	int ret;
 
 	dba = kzalloc(sizeof(*dba), GFP_KERNEL);
@@ -249,7 +248,6 @@ static int snps_accel_dmabuf_op_attach(struct dma_buf *dmabuf,
 	mutex_lock(&mbuf->lock);
 	list_add(&dba->node, &mbuf->attachments);
 	mutex_unlock(&mbuf->lock);
-	snps_accel_file_priv_get(fpriv);
 
 	return 0;
 }
@@ -259,14 +257,12 @@ static void snps_accel_dmabuf_op_detach(struct dma_buf *dmabuf,
 {
 	struct snps_accel_dmabuf_attachment *dba = attachment->priv;
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
-	struct snps_accel_file_priv *fpriv = to_snps_accel_file_priv(mbuf->ctx);
 
 	mutex_lock(&mbuf->lock);
 	list_del(&dba->node);
 	mutex_unlock(&mbuf->lock);
 	sg_free_table(&dba->sgt);
 	kfree(dba);
-	snps_accel_file_priv_put(fpriv);
 }
 
 static struct sg_table *
