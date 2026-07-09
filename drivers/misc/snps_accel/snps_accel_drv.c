@@ -539,7 +539,7 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	struct resource ctrl;
 	struct resource shmem;
 	u32 dma_bits = 32;
-	u32 pgprot_bits = snps_accel_pgprot_noncached;
+	u32 pgprot_bits;
 
 	ret = snps_accel_get_ctrl_mem(node, &ctrl);
 	if (ret < 0) {
@@ -620,15 +620,12 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 			accel_app->device->coherent_dma_mask);
 
 	ret = of_property_read_u32(node, "snps,pgprot-bits", &pgprot_bits);
-	if (ret) {
-		dev_warn(accel_app->device,
-				"snps,pgprot-bits DTS property read error %d, use noncached\n",
-				ret);
-	}
-	else {
+	if (!ret)
 		accel_app->pgprot_bits = pgprot_bits;
-		dev_dbg(accel_app->device, "shmem pgprot 0x%x\n", accel_app->pgprot_bits);
-	}
+	else
+		accel_app->pgprot_bits = snps_accel_pgprot_writecombine;
+
+	dev_dbg(accel_app->device, "shmem pgprot 0x%x\n", accel_app->pgprot_bits);
 
 	/*
 	 * The app devices are not proper OF platform devices. Apply the DMA
