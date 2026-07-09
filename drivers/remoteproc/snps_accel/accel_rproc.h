@@ -17,15 +17,14 @@ struct snps_accel_rproc;
  * @phys_addr: CPU address used to access the memory region
  * @dev_addr: device address of the memory region from accelerator view
  * @size: size of the memory region
- * @is_ram: region and system RAM intersects, disjoint, mixed,
- *          see region_intersects() in linux/mm.h
+ * @needs_cache_flush: flush CPU dcache before remote core start
  */
 struct snps_accel_rproc_mem {
 	void *virt_addr;
 	phys_addr_t phys_addr;
 	u32 dev_addr;
 	size_t size;
-	int is_ram;
+	bool needs_cache_flush;
 };
 
 /**
