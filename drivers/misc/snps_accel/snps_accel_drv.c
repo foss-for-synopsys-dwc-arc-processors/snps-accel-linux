@@ -5,6 +5,7 @@
 
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
+#include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/iommu.h>
@@ -105,7 +106,8 @@ static int
 snps_accel_do_dmabuf_alloc(struct snps_accel_file_priv *fpriv, char __user *argp)
 {
 	struct snps_accel_dmabuf_alloc data;
-	struct snps_accel_mem_buffer *mbuf = NULL;
+	struct snps_accel_mem_buffer *mbuf;
+	int fd;
 
 	if (copy_from_user(&data, (void __user *)argp,
 			  sizeof(struct snps_accel_dmabuf_alloc)))
@@ -114,13 +116,25 @@ snps_accel_do_dmabuf_alloc(struct snps_accel_file_priv *fpriv, char __user *argp
 	mbuf = snps_accel_app_dmabuf_create(&fpriv->mem, data.size, data.flags);
 	if (!mbuf)
 		return -ENOMEM;
+	/*
+	 * get_unused_fd_flags() + fd_install() are split so that all fallible
+	 * work (including copy_to_user) runs before the fd becomes visible to
+	 * userspace.
+	 */
+	fd = get_unused_fd_flags(O_CLOEXEC);
+	if (fd < 0) {
+		snps_accel_app_dmabuf_release(mbuf);
+		return fd;
+	}
 
-	data.fd = mbuf->fd;
+	data.fd = fd;
 	if (copy_to_user((void __user *)argp, &data, sizeof(data))) {
+		put_unused_fd(fd);
 		snps_accel_app_dmabuf_release(mbuf);
 		return -EFAULT;
 	}
 
+	fd_install(fd, mbuf->dmabuf->file);
 	return 0;
 }
 
