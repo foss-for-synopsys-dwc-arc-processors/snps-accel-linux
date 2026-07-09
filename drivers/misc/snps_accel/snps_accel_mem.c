@@ -234,7 +234,7 @@ static int snps_accel_dmabuf_op_attach(struct dma_buf *dmabuf,
 		return -ENOMEM;
 
 	ret = dma_get_sgtable(mbuf->dev, &dba->sgt, mbuf->va,
-			      mbuf->pa, mbuf->size);
+			      mbuf->da, mbuf->size);
 	if (ret < 0) {
 		dev_err(mbuf->dev, "Failed to get scatter list from DMA API\n");
 		kfree(dba);
