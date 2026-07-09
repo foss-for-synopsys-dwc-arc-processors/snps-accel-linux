@@ -382,9 +382,9 @@ void snps_accel_app_release_import(struct snps_accel_mem_ctx *mem)
 
 	mutex_lock(&mem->list_lock);
 	list_for_each_entry_safe(mbuf, nmb, &mem->mlist, ctx_link) {
-		if (mbuf->ctx == NULL && mbuf->import_attach) {
-			snps_accel_dmabuf_detach_device(mbuf);
+		if (mbuf->imported) {
 			list_del(&mbuf->ctx_link);
+			snps_accel_dmabuf_detach_device(mbuf);
 			kfree(mbuf);
 			snps_accel_file_priv_put(fpriv);
 		}
@@ -489,6 +489,7 @@ int snps_accel_app_dmabuf_import(struct snps_accel_mem_ctx *mem, int fd)
 		goto err_alloc;
 	}
 
+	mbuf->imported = true;
 	mbuf->dma_dir = DMA_BIDIRECTIONAL;
 	mbuf->dev = dmabuf_dev;
 	ret = snps_accel_dmabuf_attach_device(dmabuf, mem->dev,
@@ -539,7 +540,7 @@ int snps_accel_app_dmabuf_detach(struct snps_accel_mem_ctx *mem, int fd)
 	}
 
 	/* This check allows to call detach safely for non-imported buffers */
-	if (mbuf->ctx == NULL) {
+	if (mbuf->imported) {
 		snps_accel_dmabuf_detach_device(mbuf);
 
 		mutex_lock(&mem->list_lock);

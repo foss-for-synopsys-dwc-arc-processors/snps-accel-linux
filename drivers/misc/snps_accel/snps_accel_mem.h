@@ -44,6 +44,7 @@ struct snps_accel_mem_buffer {
 	struct device *dev;
 	struct dma_buf *dmabuf;
 	enum dma_data_direction dma_dir;
+	bool imported;
 	int fd;
 	dma_addr_t da;
 	void *va;
