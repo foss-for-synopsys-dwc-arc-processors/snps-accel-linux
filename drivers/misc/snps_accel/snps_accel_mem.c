@@ -173,7 +173,7 @@ static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
 	struct sg_table *sgt;
 
 	dba = dma_buf_attach(dmabuf, dev);
-	if (IS_ERR(dba)) 
+	if (IS_ERR(dba))
 		return PTR_ERR(dba);
 
 	sgt = dma_buf_map_attachment(dba, dma_dir);
@@ -182,8 +182,7 @@ static int snps_accel_dmabuf_attach_device(struct dma_buf *dmabuf,
 		return PTR_ERR(sgt);
 	}
 
-	if (mbuf->ctx == NULL)
-		mbuf->da = sg_dma_address(sgt->sgl);
+	mbuf->da = sg_dma_address(sgt->sgl);
 	mbuf->dmasgt = sgt;
 	mbuf->import_attach = dba;
 
@@ -205,7 +204,6 @@ static void snps_accel_dmabuf_op_release(struct dma_buf *dmabuf)
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
 	struct snps_accel_mem_ctx *mem = mbuf->ctx;
 
-	snps_accel_dmabuf_detach_device(mbuf);
 	snps_accel_mbuf_free(mem, mbuf, mbuf->dma_dir);
 }
 
@@ -304,8 +302,9 @@ static int snps_accel_dmabuf_op_begin_cpu_access(struct dma_buf *dmabuf,
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
 	struct snps_accel_dmabuf_attachment *dba;
 
-	mutex_lock(&mbuf->lock);
+	dma_sync_single_for_cpu(mbuf->dev, mbuf->da, mbuf->size, direction);
 
+	mutex_lock(&mbuf->lock);
 	list_for_each_entry(dba, &mbuf->attachments, node) {
 		if (!dba->mapped)
 			continue;
@@ -322,8 +321,9 @@ static int snps_accel_dmabuf_op_end_cpu_access(struct dma_buf *dmabuf,
 	struct snps_accel_mem_buffer *mbuf = dmabuf->priv;
 	struct snps_accel_dmabuf_attachment *dba;
 
-	mutex_lock(&mbuf->lock);
+	dma_sync_single_for_device(mbuf->dev, mbuf->da, mbuf->size, direction);
 
+	mutex_lock(&mbuf->lock);
 	list_for_each_entry(dba, &mbuf->attachments, node) {
 		if (!dba->mapped)
 			continue;
@@ -420,6 +420,7 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 	mbuf->dmabuf = dma_buf_export(&exp_info);
 	if (IS_ERR(mbuf->dmabuf)) {
 		dev_dbg(mem->dev, "Failed to create dmabuf\n");
+		mbuf->dmabuf = NULL;
 		snps_accel_mbuf_free(mem, mbuf, dma_dir);
 		return NULL;
 	}
@@ -430,13 +431,6 @@ struct snps_accel_mem_buffer *snps_accel_app_dmabuf_create(struct snps_accel_mem
 		return NULL;
 	}
 	mbuf->fd = fd;
-
-	if (snps_accel_dmabuf_attach_device(mbuf->dmabuf, mbuf->dev,
-					    mbuf, mbuf->dma_dir) != 0) {
-		dev_err(mem->dev, "Failed to attach dmabuf to device\n");
-		dma_buf_put(mbuf->dmabuf);
-		return NULL;
-	}
 
 	return mbuf;
 }
