@@ -434,7 +434,8 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 	accel_app->device->bus = pdev->dev.bus;
 	accel_app->device->of_node = node;
 
-	accel_app->device->dma_mask = pdev->dev.dma_mask;
+	accel_app->device->coherent_dma_mask = pdev->dev.coherent_dma_mask;
+	accel_app->device->dma_mask = &accel_app->device->coherent_dma_mask;
 	ret = of_property_read_u32(node, "snps,dma-bits", &dma_bits);
 	if (ret) {
 		dev_warn(accel_app->device, "snps,dma-bits DTS property read error %d, use %u\n",
