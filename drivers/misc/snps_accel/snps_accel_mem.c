@@ -103,6 +103,9 @@ snps_accel_mbuf_alloc(struct snps_accel_mem_ctx *mem, size_t size,
 	mbuf->size = aligned_size;
 	mbuf->dma_dir = dma_dir;
 
+	/* Flush stale CPU cache lines before the device writes to the buffer */
+	dma_sync_single_for_device(mbuf->dev, mbuf->da, mbuf->size, dma_dir);
+
 	mutex_init(&mbuf->lock);
 	INIT_LIST_HEAD(&mbuf->attachments);
 
