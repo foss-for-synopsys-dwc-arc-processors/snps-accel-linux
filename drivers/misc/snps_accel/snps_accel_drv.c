@@ -277,9 +277,6 @@ static int snps_accel_mmap(struct file *filp, struct vm_area_struct *vma)
 	u64 addr = vma->vm_pgoff << PAGE_SHIFT;
 	size_t size = vma->vm_end - vma->vm_start;
 
-	dev_dbg(accel_app->device, "mmap: start %lx end %lx pgoff %lx (%pap)\n",
-		vma->vm_start, vma->vm_end, vma->vm_pgoff, &addr);
-
 	if (addr == accel_app->shmem_base) {
 		if (size != accel_app->shmem_size && size != PAGE_SIZE) {
 			dev_dbg(accel_app->device, "Shared memory size mismatch\n");
