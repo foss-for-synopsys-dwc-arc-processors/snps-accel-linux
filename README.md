@@ -65,6 +65,14 @@ make KDIR=/path/to/linux-6.6 \
 Prerequisite: the target kernel config must enable loadable modules
 (`CONFIG_MODULES=y`), otherwise external module builds are rejected by Kbuild.
 
+To build with driver debug messages enabled (`dev_dbg()` output), pass `DEBUG=1`:
+
+```bash
+make DEBUG=1
+```
+
+This adds `-DDEBUG` to the compiler flags for all drivers in the out-of-tree build.
+
 ### 3) Standard kernel modules install (`modules_install`)
 
 This uses the kernel default install layout under:

@@ -14,6 +14,9 @@ SNPS_CONFIG ?= \
 	CONFIG_SNPS_ACCEL_APP=m \
 	CONFIG_SNPS_ACCEL_RPROC=m
 
+# Set DEBUG=1 to enable dev_dbg() output in all drivers.
+DEBUG ?= 0
+
 # Directory used by the flat gather install target.
 OUTPUT_DIR ?= $(M)/build/modules
 # INSTALL_MOD_PATH= ?= $(OUTPUT_DIR)
@@ -22,10 +25,10 @@ all: modules
 default: modules
 
 modules:
-	$(MAKE) -C "$(KDIR)" M="$(M)" $(SNPS_CONFIG) modules
+	$(MAKE) -C "$(KDIR)" M="$(M)" $(SNPS_CONFIG) DEBUG=$(DEBUG) modules
 
 modules_install: modules
-	$(MAKE) -C "$(KDIR)" M="$(M)" $(SNPS_CONFIG) modules_install
+	$(MAKE) -C "$(KDIR)" M="$(M)" $(SNPS_CONFIG) DEBUG=$(DEBUG) modules_install
 
 # Gather all built modules into a single flat output directory.
 install: modules
