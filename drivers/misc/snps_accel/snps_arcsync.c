@@ -178,6 +178,7 @@ struct arcsync_callback {
  * @idx - ARCSync interrupt line index and index in the array of interrupt structs (0,1,2...)
  * @vm_id - VM this interrupt belongs to (virtual IRQ mode only)
  * @vm_irq_idx - interrupt index within the VM (virtual IRQ mode only)
+ * @ack_offs - precomputed EID ACK register offset
  * @callbacks_list_lock - spinlock for the list of IRQ callbacks
  * @callbacks_list - the list of IRQ callbacks
  */
@@ -187,6 +188,7 @@ struct arcsync_interrupt {
 	u32 idx;
 	u32 vm_id;
 	u32 vm_irq_idx;
+	u32 ack_offs;
 	char name[32];
 	spinlock_t callbacks_list_lock;
 	struct list_head callbacks_list;
@@ -904,19 +906,12 @@ static irqreturn_t arcsync_interrupt(int irq, void *idata)
 	u32 val;
 
 	if (irq != irq_data->irqnum) {
-		dev_err(arcsync->dev, "Received IRQ %d (idx %u), expected %u\n",
+		dev_dbg(arcsync->dev, "Received IRQ %d (idx %u), expected %u\n",
 			irq, irq_data->idx, irq_data->irqnum);
 		return IRQ_NONE;
 	}
 
-	/* Ack interrupt */
-	if (arcsync->virt_irq)
-		offs = ARCSYNC2_VM_EID_ACK_IRQ(irq_data->vm_id,
-					       irq_data->vm_irq_idx,
-					       arcsync->host_id);
-	else
-		offs = ARCSYNC2_EID_ACK_IRQ(arcsync->host_id, irq_data->idx);
-
+	offs = irq_data->ack_offs;
 	val = readl(arcsync->regs + offs);
 	if (!val)
 		return IRQ_HANDLED;
@@ -1089,6 +1084,16 @@ static int arcsync_probe(struct platform_device *pdev)
 
 	for (i = 0; i < arcsync->num_irqs; i++) {
 		const char *name = NULL;
+
+		if (arcsync->virt_irq)
+			arcsync->irq[i].ack_offs = ARCSYNC2_VM_EID_ACK_IRQ(
+							arcsync->irq[i].vm_id,
+							arcsync->irq[i].vm_irq_idx,
+							arcsync->host_id);
+		else
+			arcsync->irq[i].ack_offs = ARCSYNC2_EID_ACK_IRQ(
+							arcsync->host_id,
+							arcsync->irq[i].idx);
 
 		dev_dbg(&pdev->dev, "Request IRQ: %d\n", arcsync->irq[i].irqnum);
 
