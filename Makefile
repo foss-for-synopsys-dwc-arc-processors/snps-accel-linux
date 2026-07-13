@@ -31,7 +31,7 @@ modules_install: modules
 install: modules
 	@echo "Gathering modules into $(OUTPUT_DIR)"
 	@mkdir -p "$(OUTPUT_DIR)"
-	@find "$(M)" -type f -name "*.ko" -exec cp -f {} "$(OUTPUT_DIR)/" \;
+	@find "$(M)" -path "$(OUTPUT_DIR)" -prune -o -type f -name "*.ko" -exec cp -f {} "$(OUTPUT_DIR)/" \;
 	@echo "Flat module output:"
 	@ls -1 "$(OUTPUT_DIR)"
 
