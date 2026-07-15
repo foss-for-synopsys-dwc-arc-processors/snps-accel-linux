@@ -395,6 +395,18 @@ static int snps_accel_init_mem_regions(struct snps_accel_app *accel_app,
 		return 0;
 	}
 
+	/* With an IOMMU enabled, do not create memory-region child devices.
+	 * Bind only the first memory region to the accelerator device, or
+	 * fall back to system memory allocations if no memory region is
+	 * specified.
+	 */
+	if (accel_app->iommu_backed && num_regions > 1) {
+		dev_warn(parent_dev,
+			 "IOMMU mode: %d memory-regions found, using only the first\n",
+			 num_regions);
+		num_regions = 1;
+	}
+
 	if (num_regions == 1) {
 		ret = of_reserved_mem_device_init_by_idx(parent_dev, node, 0);
 		if (ret) {
@@ -630,6 +642,11 @@ snps_accel_add_app(struct platform_device *pdev, struct device_node *node)
 		dev_warn(accel_app->device, "Failed to configure DMA/IOMMU (err: %d)\n", ret);
 	else
 		dev_info(accel_app->device, "IOMMU/DMA configured successfully\n");
+
+	accel_app->iommu_backed = device_iommu_mapped(accel_app->device);
+	dev_info(accel_app->device, "DMA buffers are %s\n",
+		 accel_app->iommu_backed ? "IOMMU-translated" :
+					   "physically addressed");
 
 	ret = snps_accel_init_mem_regions(accel_app, node);
 	if (ret) {
