@@ -1,4 +1,4 @@
-# Synopsys NPX/VPX Linux kernel drivers
+# MIPS ARC NPX/VPX Linux kernel drivers
 
 ## Welcome to the NPX/VPX Linux Kernel Drivers Repository
 
