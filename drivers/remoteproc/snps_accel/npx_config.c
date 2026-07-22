@@ -31,6 +31,13 @@
  *     snps,csm-banks-per-group - CSM banks per group
  *     snps,stu-per-group - number of STUs per group
  *     snps,cln-safety-lvl - functional Safety support, the driver remaps safety MMIO
+ *     snps,cln-revision - Cluster Network revision (0 - CLN1.0, 1 - CLN1.5). Selects
+ *                         the CLN port shuffle map. Default 0 (CLN1.0).
+ *     snps,csm-bank-lsb - log2 of the CSM bank granularity and bottom-matrix local
+ *                         aperture decode shift. Default 12 (CLN1.0) or 10 (CLN1.5).
+ *     snps,csm-window - fixed CSM address-decode window in the CLN map used to
+ *                       build the CSM region masks. Default 0x4000000 (64M).
+ *     snps,l2-dccm-size - size of the L2 DCCM window. Default 0x80000 (512K).
  */
 
 /* CLN config MMIO */
@@ -74,7 +81,7 @@
 #define NPX_CLN_CSM_SIZE			(cn->csm_size)
 
 #define NPX_CLN_CSM_BANKS_PER_GRP		(cn->csm_banks_per_grp)
-#define NPX_CLN_CSM_GRP_BANK_GRANUL		0x1000
+#define NPX_CLN_CSM_GRP_BANK_GRANUL		(1U << (cn)->csm_bank_lsb)
 #define NPX_CLN_CSM_GRP_INTERLEAVING		(NPX_CLN_CSM_BANKS_PER_GRP * \
 						 NPX_CLN_CSM_GRP_BANK_GRANUL)
 #define NPX_CLN_CSM_GRP_ADDR(grp)		(NPX_CLN_CSM_ADDR + \
@@ -86,17 +93,16 @@
 
 /* Safety regs remap */
 #define NPX_CLN_L1_GRP_SFTY_SIZE		0x2000
-#define NPX_L1_PERIPH_SFTY			0xF0004000
-#define NPX_L1_PERIPH_SFTY_GRP(grp, slice)	(NPX_L1_PERIPH_SFTY + (grp) * 0x20000 + \
-						 (slice) * NPX_CLN_L1_GRP_SFTY_SIZE)
 
 #define NPX_CLN_MAX_GROUPS			4
 
 /*
+ *
  * Group connections are hardwired to certain ports according to the outgoing
- * shuffle table. The driver implements the recommended table. This table is
- * suitable for 1, 2, 4 groups.
- * Four groups connect example:
+ * shuffle table. The table supports configurations with 1, 2, 4 groups.
+ * Four groups connect example for CLN 1.5, where the self-group is connected
+ * to port 0:
+ *
  *   GR0 ----1--->|----2--->|----3--->|
  *               GR1       GR2       GR3
  *
@@ -108,14 +114,24 @@
  *
  *   GR3 ----3--->|----2--->|----1--->|
  *               GR0       GR1       GR2
+ *
+ * Port shuffle tables: msts_map[src_grp][tgt_grp] = port number.
+ * v1r0: all groups including self, ports start at 1.
+ * v1r5: self-group maps to port 0 (bottom matrix).
  */
-static struct groups_map {
-	u32 grp[NPX_CLN_MAX_GROUPS - 1];
-	u32 port[NPX_CLN_MAX_GROUPS - 1];
-} groups_map[NPX_CLN_MAX_GROUPS] = {{.grp = {1, 2, 3}, .port = {1, 2, 3}},	// gr0
-				    {.grp = {0, 2, 3}, .port = {1, 3, 2}},	// gr1
-				    {.grp = {0, 1, 3}, .port = {2, 3, 1}},	// gr2
-				    {.grp = {0, 1, 2}, .port = {3, 2, 1}}};	// gr3
+static const u32 msts_map_v1r0[NPX_CLN_MAX_GROUPS][NPX_CLN_MAX_GROUPS] = {
+	{1, 2, 3, 4},
+	{2, 1, 4, 3},
+	{3, 4, 1, 2},
+	{4, 3, 2, 1},
+};
+
+static const u32 msts_map_v1r5[NPX_CLN_MAX_GROUPS][NPX_CLN_MAX_GROUPS] = {
+	{0, 1, 2, 3},
+	{1, 0, 3, 2},
+	{2, 3, 0, 1},
+	{3, 2, 1, 0},
+};
 
 static void
 npx_config_aperture(void __iomem *ptr, int apidx, phys_addr_t apbase, const u32 apsize, int mst)
@@ -129,13 +145,24 @@ npx_config_aperture(void __iomem *ptr, int apidx, phys_addr_t apbase, const u32 
 }
 
 static void
-npx_config_aperture_with_msk(void __iomem *ptr, int apidx, phys_addr_t apbase,
-			     const u32 apsize, int mst, u32 extra_size_msk)
+npx_config_aperture_lsb(void __iomem *ptr, int apidx, phys_addr_t apbase,
+			const u32 apsize, int mst, u32 lsb)
 {
-	phys_addr_t base = apbase >> 12;
-	u32 size = ~(apsize - 1) >> 12;
+	u32 base = apbase >> lsb;
+	u32 size = ~(apsize - 1) >> lsb;
 
-	size = size | (extra_size_msk >> 12);
+	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
+	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
+	writel(mst, ptr + NPX_CFG_DECMST + apidx * 4);
+}
+
+static void
+npx_config_aperture_direct(void __iomem *ptr, int apidx, phys_addr_t apbase,
+			   const u32 size_mask, int mst, u32 lsb)
+{
+	u32 base = apbase >> lsb;
+	u32 size = size_mask >> lsb;
+
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
 	writel(mst, ptr + NPX_CFG_DECMST + apidx * 4);
@@ -144,46 +171,59 @@ npx_config_aperture_with_msk(void __iomem *ptr, int apidx, phys_addr_t apbase,
 static void npx_config_l2_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn)
 {
 	void __iomem *l2_cfg;
+	u32 il_bw, csm_size_mask, csm_base;
 	int gr;
-	int drop_msk;
 	int apidx = 0;
 
-	/* config L2 AXI matrix */
+	/* Config L2 AXI matrix */
 	l2_cfg = cfg_ptr + NPX_CFG_L2_AXI_MATRIX;
+
 	/* L2 DCCM */
 	npx_config_aperture(l2_cfg, apidx++, NPX_CLN_L2_DCCM_ADDR,
-			    NPX_CLN_L2_DCCM_SIZE, cn->num_grps);
+			    cn->l2_dccm_size, cn->num_grps);
+
 	for (gr = 0; gr < cn->num_grps; gr++) {
 		/* L1 slice peripheral aperture */
-		npx_config_aperture(l2_cfg, apidx++, NPX_CLN_L1_GRP_PERIPH_ADDR(gr),
+		npx_config_aperture(l2_cfg, apidx++,
+				    NPX_CLN_L1_GRP_PERIPH_ADDR(gr),
 				    NPX_CLN_L1_GRP_PERIPH_SIZE, gr);
 		/* STU MMIO aperture */
-		npx_config_aperture(l2_cfg, apidx++, NPX_CLN_L1_GRP_STU_ADDR(gr),
+		npx_config_aperture(l2_cfg, apidx++,
+				    NPX_CLN_L1_GRP_STU_ADDR(gr),
 				    NPX_CLN_L1_GRP_STU_SIZE, gr);
 	}
 
-	/* config CSM with extra size mask - [15:16] for groups addressing) */
-	drop_msk = (cn->num_grps - 1) << ilog2(NPX_CLN_CSM_GRP_INTERLEAVING);
+	/* CSM with group interleaving mask */
+	il_bw = ilog2(cn->csm_banks_per_grp << cn->csm_bank_lsb);
+	csm_size_mask = ~(cn->csm_window - 1) |
+			((cn->num_grps - 1) << il_bw);
 	for (gr = 0; gr < cn->num_grps; gr++) {
-		npx_config_aperture_with_msk(l2_cfg, apidx++,
-					     NPX_CLN_CSM_GRP_ADDR(gr),
-					     NPX_CLN_CSM_SIZE, gr,
-					     drop_msk);
+		csm_base = NPX_CLN_CSM_ADDR | (gr << il_bw);
+		npx_config_aperture_direct(l2_cfg, apidx++,
+					   csm_base, csm_size_mask, gr, 12);
 	}
 
 	/* Config CBU matrix */
 	apidx = 0;
 	l2_cfg = cfg_ptr + NPX_CFG_L2_CBU_MATRIX;
 
-	/* L2 access CFG AXI Matrix -> port 2 */
-	npx_config_aperture(l2_cfg, apidx++, NPX_CBU_L2_CFG_AXI_ADDR,
-			    NPX_CBU_L2_CFG_AXI_SIZE, NPX_CBU_L2_CFG_AXI_PORT);
+	if (cn->revision == CLN_REVISION_V1R5) {
+		/* L2 access CFG AXI Matrix -> port 2 */
+		npx_config_aperture(l2_cfg, apidx++, NPX_CBU_L2_CFG_AXI_ADDR,
+				    NPX_CBU_L2_CFG_AXI_SIZE,
+				    NPX_CBU_L2_CFG_AXI_PORT);
+	}
+
 	/* L2 access peripheral -> port 0 to top_matrix */
 	npx_config_aperture(l2_cfg, apidx++, NPX_CBU_L2_PERIPH_ADDR,
 			    NPX_CBU_L2_PERIPH_SIZE, NPX_CBU_L2_PERIPH_PORT);
-	/* L2 access CSM -> port 0 to top_matrix */
-	npx_config_aperture(l2_cfg, apidx++, NPX_CBU_L2_CSM_ADDR,
-			    NPX_CBU_L2_CSM_SIZE, NPX_CBU_L2_CSM_PORT);
+
+	if (cn->revision == CLN_REVISION_V1R5) {
+		/* L2 access CSM -> port 0 to top_matrix */
+		npx_config_aperture(l2_cfg, apidx++, NPX_CBU_L2_CSM_ADDR,
+				    cn->csm_window, NPX_CBU_L2_CSM_PORT);
+	}
+
 	/* L2 access L2 NoC port -> port 1 */
 	npx_config_aperture(l2_cfg, apidx++, 0, 0, NPX_CBU_L2_NOC_PORT);
 }
@@ -191,88 +231,115 @@ static void npx_config_l2_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn)
 static void
 npx_config_cln_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn, u32 gr)
 {
+	const u32 (*msts_map)[NPX_CLN_MAX_GROUPS];
 	void __iomem *cfg_dmi;
+	u32 il_bw, csm_size_mask, csm_base, csm_bank_mask;
 	int apidx = 0;
 	int port = 0;
-	int drop_msk;
 	int i;
+
+	msts_map = (cn->revision == CLN_REVISION_V1R0) ?
+		   msts_map_v1r0 : msts_map_v1r5;
 
 	/* Config L1 group top AXI matrix */
 	cfg_dmi = cfg_ptr + NPX_CFG_L1_GRP_AXI_TOP(gr);
 
 	/* Slice peripheral */
-	for (i = 0; i < cn->num_grps - 1; i++) {
+	for (i = 0; i < cn->num_grps; i++)
 		npx_config_aperture(cfg_dmi, apidx++,
-				    NPX_CLN_L1_GRP_PERIPH_ADDR(groups_map[gr].grp[i]),
-				    NPX_CLN_L1_GRP_PERIPH_SIZE, groups_map[gr].port[i]);
-	}
+				    NPX_CLN_L1_GRP_PERIPH_ADDR(i),
+				    NPX_CLN_L1_GRP_PERIPH_SIZE,
+				    msts_map[gr][i]);
+
 	/* STU */
-	for (i = 0; i < cn->num_grps - 1; i++) {
+	for (i = 0; i < cn->num_grps; i++)
 		npx_config_aperture(cfg_dmi, apidx++,
-				    NPX_CLN_L1_GRP_STU_ADDR(groups_map[gr].grp[i]),
-				    NPX_CLN_L1_GRP_STU_SIZE, groups_map[gr].port[i]);
-	}
+				    NPX_CLN_L1_GRP_STU_ADDR(i),
+				    NPX_CLN_L1_GRP_STU_SIZE,
+				    msts_map[gr][i]);
+
 	/* CSM */
-	drop_msk = (cn->num_grps - 1) << ilog2(NPX_CLN_CSM_GRP_INTERLEAVING);
-	for (i = 0; i < cn->num_grps - 1; i++) {
-		npx_config_aperture_with_msk(cfg_dmi, apidx++,
-					     NPX_CLN_CSM_GRP_ADDR(groups_map[gr].grp[i]),
-					     NPX_CLN_CSM_SIZE,
-					     groups_map[gr].port[i],
-					     drop_msk);
+	il_bw = ilog2(cn->csm_banks_per_grp << cn->csm_bank_lsb);
+	csm_size_mask = ~(cn->csm_window - 1) |
+			((cn->num_grps - 1) << il_bw);
+	for (i = 0; i < cn->num_grps; i++) {
+		csm_base = NPX_CLN_CSM_ADDR | (i << il_bw);
+		npx_config_aperture_direct(cfg_dmi, apidx++,
+					   csm_base, csm_size_mask,
+					   msts_map[gr][i], 12);
 	}
-	/* Others (local peripheral and L2 DCCM) routes to port 0 (bottom matrix) */
-	npx_config_aperture(cfg_dmi, apidx++, 0x0, 0x0, 0);
+
+	/* L2 core DCCM */
+	npx_config_aperture(cfg_dmi, apidx++, NPX_CLN_L2_DCCM_ADDR,
+			    cn->l2_dccm_size, msts_map[gr][gr]);
+
+	/* Route all other top-matrix traffic to port 0 (bottom martix) */
+	if (cn->revision == CLN_REVISION_V1R0)
+		npx_config_aperture(cfg_dmi, 15, 0x0, 0x0, 0);
+	else
+		npx_config_aperture(cfg_dmi, apidx++, 0x0, 0x0, 0);
 
 	/* Config L1 group bottom matrix */
 	apidx = 0;
 	cfg_dmi = cfg_ptr + NPX_CFG_L1_GRP_AXI_BOTTOM(gr);
-	drop_msk = (cn->csm_banks_per_grp - 1) << 12;
-	/* Access CSM banks */
+
+	/* CSM banks */
+	csm_bank_mask = ~(cn->csm_window - 1) |
+			((cn->csm_banks_per_grp - 1) << cn->csm_bank_lsb);
 	for (i = 0; i < cn->csm_banks_per_grp; i++) {
-		/* With extra drop [14:12] for csm banks addressing) */
-		npx_config_aperture_with_msk(cfg_dmi, apidx++,
-					     NPX_CLN_CSM_GRP_BANK_ADDR(i),
-					     NPX_CLN_CSM_SIZE, i,
-					     drop_msk);
+		csm_base = NPX_CLN_CSM_ADDR | (i << cn->csm_bank_lsb);
+		npx_config_aperture_direct(cfg_dmi, apidx++,
+					   csm_base, csm_bank_mask,
+					   i, cn->csm_bank_lsb);
 	}
 
-	/* Next port (csm_banks_per_grp) to map the rest to NoC */
-	npx_config_aperture(cfg_dmi, apidx++, 0, 0, cn->csm_banks_per_grp);
+	/* Local bottom apertures */
+	port = cn->csm_banks_per_grp +
+	       (cn->revision == CLN_REVISION_V1R0 ? 1 : 0);
 
-	/* (Next port (csm_banks_per_grp + 1) for local peripheral and L2 DCCM) */
 	/* Slice peripheral */
-	npx_config_aperture(cfg_dmi, apidx++, NPX_CLN_L1_GRP_PERIPH_ADDR(gr),
-			    NPX_CLN_L1_GRP_PERIPH_SIZE, cn->csm_banks_per_grp + 1);
+	npx_config_aperture_lsb(cfg_dmi, apidx++,
+				NPX_CLN_L1_GRP_PERIPH_ADDR(gr),
+				NPX_CLN_L1_GRP_PERIPH_SIZE,
+				port, cn->bottom_lsb);
+
 	/* L2-DCCM */
-	npx_config_aperture(cfg_dmi, apidx++, NPX_CLN_L2_DCCM_ADDR,
-			    NPX_CLN_L2_DCCM_SIZE, cn->csm_banks_per_grp + 1);
+	npx_config_aperture_lsb(cfg_dmi, apidx++, NPX_CLN_L2_DCCM_ADDR,
+				cn->l2_dccm_size, port, cn->bottom_lsb);
+
 	/* STU MMIO */
-	npx_config_aperture(cfg_dmi, apidx++, NPX_CLN_L1_GRP_STU_ADDR(gr),
-			    NPX_CLN_L1_GRP_STU_SIZE, cn->csm_banks_per_grp + 1);
+	npx_config_aperture_lsb(cfg_dmi, apidx++,
+				NPX_CLN_L1_GRP_STU_ADDR(gr),
+				NPX_CLN_L1_GRP_STU_SIZE,
+				port, cn->bottom_lsb);
+
+	/* Remaining traffic routes to the L1 NoC port */
+	if (cn->revision == CLN_REVISION_V1R0)
+		npx_config_aperture(cfg_dmi, apidx++, 0, 0,
+				    cn->csm_banks_per_grp);
 
 	/* Config ccm_demux */
 	apidx = 0;
 	port = 0;
-	cfg_dmi = cfg_ptr +  NPX_CFG_L1_GRP_CCM_DEMUX(gr);
+	cfg_dmi = cfg_ptr + NPX_CFG_L1_GRP_CCM_DEMUX(gr);
 
 	/* Access peripheral each SLICE */
-	for (i = 0; i < cn->slice_per_grp; i++, port++) {
+	for (i = 0; i < cn->slice_per_grp; i++, port++)
 		npx_config_aperture(cfg_dmi, apidx++,
 				    NPX_CLN_L1_GRP_PERIPH_ADDR(gr) +
 				    i * NPX_CLN_L1_SLICE_PERIPH_SIZE,
 				    NPX_CLN_L1_SLICE_PERIPH_SIZE, port);
-	}
+
 	/* STU */
-	for (i = 0; i < cn->stu_per_grp; i++, port++) {
+	for (i = 0; i < cn->stu_per_grp; i++, port++)
 		npx_config_aperture(cfg_dmi, apidx++,
-				    NPX_CLN_L1_GRP_STU_ADDR(gr) + i * NPX_CLN_L1_STU_SIZE,
+				    NPX_CLN_L1_GRP_STU_ADDR(gr) +
+				    i * NPX_CLN_L1_STU_SIZE,
 				    NPX_CLN_L1_STU_SIZE, port);
-	}
 
 	/* Accel L2-DCCM */
 	npx_config_aperture(cfg_dmi, apidx++, NPX_CLN_L2_DCCM_ADDR,
-			    NPX_CLN_L2_DCCM_SIZE, port);
+			    cn->l2_dccm_size, port);
 }
 
 static int npx_csm_remap_aperture(void __iomem *ptr, int apidx, int virt_gr)
@@ -334,13 +401,18 @@ npx_config_remap(void __iomem *cfg_ptr, struct snps_npu_cn *cn, int gr)
 
 	/* Config sfty ccm remap */
 	if (cn->safety_lvl > 0) {
-		/*
-		 * Remap sfty regs for L1 slice access
-		 */
 		lsb = ilog2(NPX_CLN_L1_GRP_SFTY_SIZE);
 		for (i = 0; i < cn->slice_per_grp; i++) {
-			caddr = NPX_L1_PERIPH_SFTY_GRP(gr, i);
+			/* Remap host view of slice safety MMIO */
+			caddr = cn->cfg_phys + gr * NPX_CFG_L1_GRP_OFFSET +
+				0x4000 + i * NPX_CLN_L1_GRP_SFTY_SIZE;
 			saddr = NPX_CLN_L1_GRP_SFTY(gr, i);
+			apidx = npx_remap_aperture(cfg_dmi, apidx,
+						   caddr, NPX_CLN_L1_GRP_SFTY_SIZE,
+						   saddr, NPX_CLN_L1_GRP_SFTY_SIZE, lsb);
+			/* L2 safety MMIO remap */
+			caddr = NPX_CBU_L2_CFG_AXI_ADDR + gr * NPX_CFG_L1_GRP_OFFSET +
+				0x4000 + i * NPX_CLN_L1_GRP_SFTY_SIZE;
 			apidx = npx_remap_aperture(cfg_dmi, apidx,
 						   caddr, NPX_CLN_L1_GRP_SFTY_SIZE,
 						   saddr, NPX_CLN_L1_GRP_SFTY_SIZE, lsb);
@@ -547,16 +619,19 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 	if (!cfg_ptr)
 		return -EFAULT;
 
-	dev_dbg(npu->device, "NPU CFG start %pap (mapped at %pS)\n",
-					&cfg_mem.start, cfg_ptr);
+	dev_dbg(npu->device, "NPU CFG base %pap\n", &cfg_mem.start);
 
 	npu->cn.num_slices = NPU_DEF_NUM_SLICES;
 	npu->cn.csm_banks_per_grp = NPU_DEF_CSM_BANKS_PER_GRP;
 	npu->cn.stu_per_grp = NPU_DEF_NUM_STU_PER_GRP;
 	npu->cn.safety_lvl = NPU_DEF_SAFETY_LEVEL;
 	npu->cn.csm_size = NPU_DEF_CSM_SIZE;
-	npu->cn.map_start = NPX_DEF_CLN_MAP_START;
+	npu->cn.map_start = NPU_DEF_CLN_MAP_START;
 	npu->cn.skip_setup = 0;
+	npu->cn.revision = NPU_DEF_CLN_REVISION;
+	npu->cn.l2_dccm_size = NPU_DEF_L2_DCCM_SIZE;
+	npu->cn.csm_bank_lsb = NPU_DEF_CSM_BANK_LSB;
+	npu->cn.csm_window = NPU_DEF_CSM_WINDOW;
 
 	/* Get groups properties and update defaults */
 	of_property_read_u32(npu_cfg_np, "snps,npu-slice-num",
@@ -571,6 +646,17 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 			     &npu->cn.csm_size);
 	of_property_read_u32(npu_cfg_np, "snps,cln-map-start",
 			     &npu->cn.map_start);
+	of_property_read_u32(npu_cfg_np, "snps,cln-revision",
+			     &npu->cn.revision);
+
+	ret = of_property_read_u32(npu_cfg_np, "snps,csm-bank-lsb",
+				   &npu->cn.csm_bank_lsb);
+	if (ret && npu->cn.revision == CLN_REVISION_V1R5)
+		npu->cn.csm_bank_lsb = 10;
+	npu->cn.bottom_lsb = npu->cn.csm_bank_lsb;
+
+	of_property_read_u32(npu_cfg_np, "snps,csm-window",
+			     &npu->cn.csm_window);
 
 	ret = of_property_read_u32(npu_cfg_np, "snps,npu-group-num",
 			     &npu->cn.num_grps);
@@ -583,6 +669,7 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 			npu->cn.num_grps = 4;
 	}
 	npu->cn.slice_per_grp = npu->cn.num_slices / npu->cn.num_grps;
+	npu->cn.cfg_phys = cfg_mem.start;
 	npu->cn.skip_setup = of_property_read_bool(npu_cfg_np, "snps,skip-cln-setup");
 
 	dev_dbg(npu->device, "NPU slice num: %d\n", npu->cn.num_slices);
@@ -592,6 +679,9 @@ int npx_setup_cluster_default(struct snps_accel_rproc *npu)
 	dev_dbg(npu->device, "Slices per grp: %d\n", npu->cn.slice_per_grp);
 	dev_dbg(npu->device, "STU per grp: %d\n", npu->cn.stu_per_grp);
 	dev_dbg(npu->device, "CSM size: 0x%x\n", npu->cn.csm_size);
+	dev_dbg(npu->device, "CSM window: 0x%x\n", npu->cn.csm_window);
+	dev_dbg(npu->device, "CSM bank LSB: %d\n", npu->cn.csm_bank_lsb);
+	dev_dbg(npu->device, "CLN revision: %d\n", npu->cn.revision);
 	dev_dbg(npu->device, "CLN map start: 0x%x\n", npu->cn.map_start);
 
 	/* Reset NPX cluster groups */

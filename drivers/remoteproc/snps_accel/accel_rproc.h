@@ -40,13 +40,20 @@ struct snps_accel_rproc_dev_data {
 	int (*stop_core)(struct snps_accel_rproc *aproc);
 };
 
+/* Cluster Network revision */
+#define CLN_REVISION_V1R0		0	/* CLN 1.0 */
+#define CLN_REVISION_V1R5		1	/* CLN 1.5 */
+
+#define NPU_DEF_CLN_REVISION		CLN_REVISION_V1R0
 #define NPU_DEF_NUM_SLICES		16
 #define NPU_DEF_CSM_BANKS_PER_GRP	8
 #define NPU_DEF_NUM_STU_PER_GRP		2
 #define NPU_DEF_SAFETY_LEVEL		1
 #define NPU_DEF_CSM_SIZE		0x4000000
-#define NPX_DEF_CLN_MAP_START		0xE0000000
-
+#define NPU_DEF_CLN_MAP_START		0xE0000000
+#define NPU_DEF_L2_DCCM_SIZE		0x80000
+#define NPU_DEF_CSM_BANK_LSB		12
+#define NPU_DEF_CSM_WINDOW		0x4000000
 
 /**
  * struct snps_npu_cn - NPU Cluster Network properties
@@ -55,9 +62,16 @@ struct snps_accel_rproc_dev_data {
  * @slice_per_grp: number of L1 slices per group
  * @csm_banks_per_grp: number of CSM banks
  * @csm_size: full size of the NPX Cluster Shared Memory
+ * @csm_window: fixed CSM address-decode window in the CLN map (default 64M)
  * @stu_per_grp: number of STU lines per group
  * @safety_lvl: functional safety support
  * @map_start: start offset of DMI mappings in the Cluster Network address space
+ * @skip_setup: skip CLN programming when set from DT
+ * @csm_bank_lsb: log2 of the CSM bank granularity
+ * @bottom_lsb: shift for bottom-matrix local periph/DCCM/STU
+ * @l2_dccm_size: size of the L2 DCCM window
+ * @revision: CLN revision
+ * @cfg_phys: physical base address of the NPU CFG MMIO
  */
 struct snps_npu_cn {
 	u32 num_slices;
@@ -65,10 +79,16 @@ struct snps_npu_cn {
 	u32 slice_per_grp;
 	u32 csm_banks_per_grp;
 	u32 csm_size;
+	u32 csm_window;
 	u32 stu_per_grp;
 	u32 safety_lvl;
 	u32 map_start;
 	u32 skip_setup;
+	u32 csm_bank_lsb;
+	u32 bottom_lsb;
+	u32 l2_dccm_size;
+	u32 revision;
+	phys_addr_t cfg_phys;
 };
 
 /**
