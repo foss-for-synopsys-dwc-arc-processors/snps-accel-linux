@@ -6,6 +6,7 @@
  * Copyright (C) 2023 Synopsys, Inc. (www.synopsys.com)
  */
 
+#include <linux/bits.h>
 #include <linux/delay.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
@@ -96,6 +97,9 @@
 
 #define NPX_CLN_MAX_GROUPS			4
 
+#define NPX_CLN_ADDR_WIDTH			40
+#define NPX_CLN_ADDR_MASK			GENMASK_ULL(NPX_CLN_ADDR_WIDTH - 1, 0)
+
 /*
  *
  * Group connections are hardwired to certain ports according to the outgoing
@@ -133,11 +137,21 @@ static const u32 msts_map_v1r5[NPX_CLN_MAX_GROUPS][NPX_CLN_MAX_GROUPS] = {
 	{3, 2, 1, 0},
 };
 
+static inline u32 npx_dec_size(u64 size_mask, u32 lsb)
+{
+	return (u32)((size_mask & NPX_CLN_ADDR_MASK) >> lsb);
+}
+
+static inline u64 npx_size_mask(u32 apsize)
+{
+	return ~((u64)apsize - 1) & NPX_CLN_ADDR_MASK;
+}
+
 static void
 npx_config_aperture(void __iomem *ptr, int apidx, phys_addr_t apbase, const u32 apsize, int mst)
 {
 	phys_addr_t base = apbase >> 12;
-	u32 size = ~(apsize - 1) >> 12;
+	u32 size = npx_dec_size(npx_size_mask(apsize), 12);
 
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
@@ -149,7 +163,7 @@ npx_config_aperture_lsb(void __iomem *ptr, int apidx, phys_addr_t apbase,
 			const u32 apsize, int mst, u32 lsb)
 {
 	u32 base = apbase >> lsb;
-	u32 size = ~(apsize - 1) >> lsb;
+	u32 size = npx_dec_size(npx_size_mask(apsize), lsb);
 
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
@@ -158,10 +172,10 @@ npx_config_aperture_lsb(void __iomem *ptr, int apidx, phys_addr_t apbase,
 
 static void
 npx_config_aperture_direct(void __iomem *ptr, int apidx, phys_addr_t apbase,
-			   const u32 size_mask, int mst, u32 lsb)
+			   const u64 size_mask, int mst, u32 lsb)
 {
 	u32 base = apbase >> lsb;
-	u32 size = size_mask >> lsb;
+	u32 size = npx_dec_size(size_mask, lsb);
 
 	writel(base, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size, ptr + NPX_CFG_DECSIZE + apidx * 4);
@@ -171,7 +185,8 @@ npx_config_aperture_direct(void __iomem *ptr, int apidx, phys_addr_t apbase,
 static void npx_config_l2_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn)
 {
 	void __iomem *l2_cfg;
-	u32 il_bw, csm_size_mask, csm_base;
+	u64 csm_size_mask;
+	u32 il_bw, csm_base;
 	int gr;
 	int apidx = 0;
 
@@ -195,8 +210,8 @@ static void npx_config_l2_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn)
 
 	/* CSM with group interleaving mask */
 	il_bw = ilog2(cn->csm_banks_per_grp << cn->csm_bank_lsb);
-	csm_size_mask = ~(cn->csm_window - 1) |
-			((cn->num_grps - 1) << il_bw);
+	csm_size_mask = npx_size_mask(cn->csm_window) |
+			((u64)(cn->num_grps - 1) << il_bw);
 	for (gr = 0; gr < cn->num_grps; gr++) {
 		csm_base = NPX_CLN_CSM_ADDR | (gr << il_bw);
 		npx_config_aperture_direct(l2_cfg, apidx++,
@@ -233,7 +248,8 @@ npx_config_cln_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn, u32 gr)
 {
 	const u32 (*msts_map)[NPX_CLN_MAX_GROUPS];
 	void __iomem *cfg_dmi;
-	u32 il_bw, csm_size_mask, csm_base, csm_bank_mask;
+	u64 csm_size_mask, csm_bank_mask;
+	u32 il_bw, csm_base;
 	int apidx = 0;
 	int port = 0;
 	int i;
@@ -260,8 +276,8 @@ npx_config_cln_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn, u32 gr)
 
 	/* CSM */
 	il_bw = ilog2(cn->csm_banks_per_grp << cn->csm_bank_lsb);
-	csm_size_mask = ~(cn->csm_window - 1) |
-			((cn->num_grps - 1) << il_bw);
+	csm_size_mask = npx_size_mask(cn->csm_window) |
+			((u64)(cn->num_grps - 1) << il_bw);
 	for (i = 0; i < cn->num_grps; i++) {
 		csm_base = NPX_CLN_CSM_ADDR | (i << il_bw);
 		npx_config_aperture_direct(cfg_dmi, apidx++,
@@ -284,8 +300,8 @@ npx_config_cln_grp(void __iomem *cfg_ptr, struct snps_npu_cn *cn, u32 gr)
 	cfg_dmi = cfg_ptr + NPX_CFG_L1_GRP_AXI_BOTTOM(gr);
 
 	/* CSM banks */
-	csm_bank_mask = ~(cn->csm_window - 1) |
-			((cn->csm_banks_per_grp - 1) << cn->csm_bank_lsb);
+	csm_bank_mask = npx_size_mask(cn->csm_window) |
+			((u64)(cn->csm_banks_per_grp - 1) << cn->csm_bank_lsb);
 	for (i = 0; i < cn->csm_banks_per_grp; i++) {
 		csm_base = NPX_CLN_CSM_ADDR | (i << cn->csm_bank_lsb);
 		npx_config_aperture_direct(cfg_dmi, apidx++,
@@ -371,11 +387,10 @@ npx_remap_aperture(void __iomem *ptr, int apidx,
 		   const phys_addr_t apbase2, const u32 apsize2, const int lsb)
 {
 	u32 base1 = apbase1 >> 12;
-	u32 size1 = ~(apsize1 - 1) >> 12;
+	u32 size1 = npx_dec_size(npx_size_mask(apsize1), 12);
 	u32 base2 = apbase2 >> 12;
-	u32 size2 = ~(apsize2 - 1) >> 12;
+	u32 size2 = npx_dec_size(npx_size_mask(apsize2), 12);
 
-	size1 = size1 & ((1 << (40 - 12)) - 1);
 	writel(base1, ptr + NPX_CFG_DECBASE + apidx * 4);
 	writel(size1, ptr + NPX_CFG_DECSIZE + apidx * 4);
 
