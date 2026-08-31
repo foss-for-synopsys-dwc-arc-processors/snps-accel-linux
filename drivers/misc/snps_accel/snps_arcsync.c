@@ -341,14 +341,14 @@ static int arcsync_power_ctrl(struct device *dev, u32 clid, u32 cid, u32 cmd)
 	u32 count = 10;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reg_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_PMODE(coreid) :
+	u32 reg_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_PMODE(coreid) :
 						   ARCSYNC1_CORE_PMODE(coreid);
 
 	if (cmd == ARCSYNC_POWER_UP)
-		power_cmd = (arcsync->version == 2) ? ARCSYNC2_CORE_POWERUP :
+		power_cmd = (arcsync->version >= 2) ? ARCSYNC2_CORE_POWERUP :
 						      ARCSYNC1_CORE_POWERUP;
 	else
-		power_cmd = (arcsync->version == 2) ? ARCSYNC2_CORE_POWERDOWN :
+		power_cmd = (arcsync->version >= 2) ? ARCSYNC2_CORE_POWERDOWN :
 						      ARCSYNC1_CORE_POWERDOWN;
 
 	mutex_lock(&arcsync->lock);
@@ -377,14 +377,14 @@ static int arcsync_reset(struct device *dev, u32 clid, u32 cid, u32 cmd)
 {
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reg_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_RESET(coreid) :
+	u32 reg_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_RESET(coreid) :
 						   ARCSYNC1_CORE_RESET(coreid);
 	u32 pwd;
 
 	if (cmd == ARCSYNC_RESET_DEASSERT)
-		pwd = (arcsync->version == 2) ? ARCSYNC2_RESET_DEASSERT : ARCSYNC1_RESET_PWD;
+		pwd = (arcsync->version >= 2) ? ARCSYNC2_RESET_DEASSERT : ARCSYNC1_RESET_PWD;
 	else
-		pwd = (arcsync->version == 2) ? ARCSYNC2_RESET_ASSERT : ARCSYNC1_RESET_PWD;
+		pwd = (arcsync->version >= 2) ? ARCSYNC2_RESET_ASSERT : ARCSYNC1_RESET_PWD;
 
 	mutex_lock(&arcsync->lock);
 	writel(coreid + pwd, arcsync->regs + reg_offset);
@@ -407,7 +407,7 @@ static int arcsync_start(struct device *dev, u32 clid, u32 cid)
 	u32 count = 10;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reg_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_RUN(coreid) :
+	u32 reg_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_RUN(coreid) :
 						   ARCSYNC1_CORE_RUN(coreid);
 
 	mutex_lock(&arcsync->lock);
@@ -439,7 +439,7 @@ static int arcsync_halt(struct device *dev, u32 clid, u32 cid)
 	u32 count = 10;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reg_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_HALT(coreid) :
+	u32 reg_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_HALT(coreid) :
 						   ARCSYNC1_CORE_HALT(coreid);
 
 	mutex_lock(&arcsync->lock);
@@ -473,9 +473,9 @@ arcsync_set_ivt(struct device *dev, u32 clid, u32 cid, phys_addr_t ivt_addr)
 {
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reglo_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_IVT_LO(coreid) :
+	u32 reglo_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_IVT_LO(coreid) :
 						     ARCSYNC1_CORE_IVT_LO(coreid);
-	u32 reghi_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_IVT_HI(coreid) :
+	u32 reghi_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_IVT_HI(coreid) :
 						     ARCSYNC1_CORE_IVT_HI(coreid);
 	u32 shift_ivt = 10;
 
@@ -514,7 +514,7 @@ static int arcsync_get_status(struct device *dev, u32 clid, u32 cid)
 	u32 status;
 	struct arcsync_device *arcsync = dev_get_drvdata(dev);
 	u32 coreid = arcsync_build_coreid(clid, cid, arcsync->corenum_width);
-	u32 reg_offset = (arcsync->version == 2) ? ARCSYNC2_CORE_STATUS(coreid) :
+	u32 reg_offset = (arcsync->version >= 2) ? ARCSYNC2_CORE_STATUS(coreid) :
 						   ARCSYNC1_CORE_STATUS(coreid);
 	int ret_status = 0;
 
