@@ -480,7 +480,7 @@ static int npx_reset_cluster_grps(struct snps_accel_rproc *aproc, u32 rst_code)
 	int grp;
 	int i;
 
-	if (aproc->ctrl.ver == 2) {
+	if (aproc->ctrl.ver >= 2) {
 		fn->reset_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP,
 					rst_code);
 		/* reset L2C cores inside the L2 group */
@@ -512,7 +512,7 @@ static int npx_powerup_cluster_grps(struct snps_accel_rproc *aproc)
 	int grp;
 	int i;
 
-	if (aproc->ctrl.ver == 2) {
+	if (aproc->ctrl.ver >= 2) {
 		fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_CLK_DIS);
 		fn->power_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_POWER_UP);
 		fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ARCSYNC_CLK_EN);
@@ -548,7 +548,7 @@ static int npx_powerdown_cluster_grps(struct snps_accel_rproc *aproc)
 	int grp;
 	int i;
 
-	if (aproc->ctrl.ver == 2) {
+	if (aproc->ctrl.ver >= 2) {
 		for (grp = 0; grp < aproc->cn.num_grps; grp++) {
 			fn->clk_ctrl_cluster_group(ctrl, clid,
 						   ARCSYNC_NPX_L1GRP0 + grp,
@@ -579,7 +579,7 @@ static int npx_clk_ctrl_cluster_grps(struct snps_accel_rproc *aproc, u32 ctrl_va
 	int grp;
 	int i;
 
-	if (aproc->ctrl.ver != 2)
+	if (aproc->ctrl.ver < 2)
 		return 0;
 
 	fn->clk_ctrl_cluster_group(ctrl, clid, ARCSYNC_NPX_L2GRP, ctrl_val);
