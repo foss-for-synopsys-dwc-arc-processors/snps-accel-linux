@@ -47,6 +47,7 @@
 })
 
 #define ARCSYNC_BLD_HAS_PMU		(1 << 22)
+#define ARCSYNC_BLD_NUM_VMS(bcr)	((((bcr) >> 25) & 0x3) << 2)
 
 /* ARCsync v1 definitions */
 #define ARCSYNC1_CORE_CONTROL		0x1000
@@ -137,9 +138,11 @@
 #define ARCSYNC2_AC_SIZE		(4 * ARCSYNC_MAX_COREID * ARCSYNC2_AC_NUM)
 #define ARCSYNC2_AC_SIZE_ALIGNED	ALIGN(ARCSYNC2_AC_SIZE, 4096)
 
+#define ARCSYNC2_VM_MAP_OFFSET		(ARCSYNC2_AC_CONTROL + \
+					 ARCSYNC2_AC_SIZE_ALIGNED)
 #define ARCSYNC2_VM_MAP_SIZE		0x1000
-#define ARCSYNC2_VM_BASE_OFFSET		(ARCSYNC2_AC_CONTROL + \
-					 ARCSYNC2_AC_SIZE_ALIGNED + \
+#define ARCSYNC2_VM_MAP_VALID		(1 << 31)
+#define ARCSYNC2_VM_BASE_OFFSET		(ARCSYNC2_VM_MAP_OFFSET + \
 					 ARCSYNC2_VM_MAP_SIZE)
 #define ARCSYNC2_VM_SIZE		0x1000
 
@@ -203,6 +206,7 @@ struct arcsync_interrupt {
  * @has_pmu: PMU presence flag
  * @clusters_num: number of clusters controlled by ARCsync
  * @ac_num: number of ARCSync atomic counters
+ * @vm_num: number of virtual machines
  * @cores_max: number of cores controlled by ARCsync
  * @host_id: host CPU id as it seen by the ARCSync
  * @vdk_fix: use of VDK fix flag
@@ -221,6 +225,7 @@ struct arcsync_device {
 	u32 clusters_num;
 	u32 cores_max;
 	u32 ac_num;
+	u32 vm_num;
 	u32 host_id;
 	u32 vdk_fix;
 	bool virt_irq;
@@ -823,6 +828,35 @@ static int arcsync_get_ac_num(struct arcsync_device *arcsync)
 	return ARCSYNC_BLD_AC_NUM(bcr);
 }
 
+static int arcsync_get_vm_num(struct arcsync_device *arcsync)
+{
+	u32 bcr;
+
+	bcr = readl(arcsync->regs + ARCSYNC_BLD_CFG);
+	return ARCSYNC_BLD_NUM_VMS(bcr);
+}
+
+static void arcsync_setup_default_vm_map(struct arcsync_device *arcsync)
+{
+	u32 vm, vp;
+	u32 num_vp = arcsync->clusters_num;
+	u32 num_vm = arcsync->vm_num;
+
+	if (!num_vm || arcsync->version < 2) {
+		dev_warn(arcsync->dev, "ARCSync does not support VMs\n");
+		return;
+	}
+
+	mutex_lock(&arcsync->lock);
+	for (vm = 0; vm < num_vm; vm++) {
+		for (vp = 0; vp < num_vp; vp++) {
+			u32 off = ARCSYNC2_VM_MAP_OFFSET + 4 * (vm * num_vp + vp);
+			writel(ARCSYNC2_VM_MAP_VALID | vp, arcsync->regs + off);
+		}
+	}
+	mutex_unlock(&arcsync->lock);
+}
+
 static int arcsync_read_version(struct arcsync_device *arcsync)
 {
 	return readl(arcsync->regs + ARCSYNC_BLD_CFG) & ARCSYNC_BLD_VERSION_MASK;
@@ -1048,6 +1082,9 @@ static int arcsync_probe(struct platform_device *pdev)
 	if (arcsync->version > 1)
 		arcsync->ac_num = arcsync_get_ac_num(arcsync);
 
+	if (arcsync->version >= 2)
+		arcsync->vm_num = arcsync_get_vm_num(arcsync);
+
 	arcsync->corenum_width = ilog2(cores_per_cluster);
 
 	if (!of_property_read_u32(node, "snps,host-cluster-id", &hcluster_id)) {
@@ -1068,6 +1105,9 @@ static int arcsync_probe(struct platform_device *pdev)
 
 	of_property_read_u32(node, "snps,arcnet-id", &arcsync->arcnet_id);
 
+	if (of_property_read_bool(node, "snps,default-vm-map"))
+		arcsync_setup_default_vm_map(arcsync);
+
 	dev_dbg(&pdev->dev, "ARCsync registers addr %pap (mapped %pS)\n",
 		&res->start, arcsync->regs);
 
@@ -1076,6 +1116,7 @@ static int arcsync_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "Cores num: %d\n", arcsync->cores_max);
 	dev_dbg(&pdev->dev, "Corenum width: %d\n", arcsync->corenum_width);
 	dev_dbg(&pdev->dev, "Atomic counters: %d\n", arcsync->ac_num);
+	dev_dbg(&pdev->dev, "VMs num: %d\n", arcsync->vm_num);
 	dev_dbg(&pdev->dev, "PMU: %d\n", arcsync->has_pmu);
 	dev_dbg(&pdev->dev, "VDK fix: %d\n", arcsync->vdk_fix);
 	dev_dbg(&pdev->dev, "Host ID 0x%x\n", arcsync->host_id);
